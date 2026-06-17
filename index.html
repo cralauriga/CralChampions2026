@@ -756,10 +756,77 @@ function applyConfig(){
 /* ══════════════════════════════════
    RICERCA — filtra solo sulla sezione attiva
    ══════════════════════════════════ */
+let _searchTermsCache={ key:'', terms:[], playerMatched:false };
+function nameSearchVariants(value){
+  const clean=smartSpace(String(value||'')
+    .replace(/\bx\s*\d+\b/ig,'')
+    .replace(/\(.*?\)/g,' ')
+    .replace(/\s+\d+\s*(?:gol|goal|reti?)\b/ig,'')
+    .replace(/\b(?:gol|goal|reti?)\s*\d+\b/ig,'')
+    .trim());
+  if(!clean) return [];
+  const variants=new Set([norm(clean)]);
+  const parts=clean.split(/\s+/).map(norm).filter(Boolean);
+  parts.forEach(x=>variants.add(x));
+  if(parts.length>1){
+    variants.add(parts.slice().reverse().join(''));
+    variants.add(parts.join(''));
+  }
+  return [...variants].filter(Boolean);
+}
+function collectKnownPlayerSearchGroups(){
+  const groups=[];
+  const addNames=(names)=>{
+    const variants=new Set();
+    (Array.isArray(names)?names:[names]).forEach(n=>nameSearchVariants(n).forEach(v=>variants.add(v)));
+    if(variants.size) groups.push([...variants]);
+  };
+
+  // Rosa squadre: è la sorgente migliore per collegare nome e cognome anche
+  // quando nei riepiloghi compare solo uno dei due.
+  for(const f of sectionFiles('squadra')){
+    rowsToObjects(state.rows[f]).forEach(r=>addNames(playerImageNames(r)));
+  }
+
+  // Fallback sui CSV riepilogo/classifiche: copre nomi non presenti nei file squadra.
+  ['marcatori','mvp','portieri'].forEach(kind=>{
+    sectionFiles(kind).forEach(f=>rowsToObjects(state.rows[f]).forEach(r=>addNames(playerNameFromRow(r))));
+  });
+  sectionFiles('riepilogo').forEach(f=>{
+    const parsed=parseRiepilogoFile(f);
+    [...parsed.marcatori,...(parsed.totaliMarcatori||[]),...parsed.mvp,...parsed.portiere,...parsed.autogoal]
+      .forEach(r=>addNames(playerNameFromRow(r)));
+  });
+  return groups;
+}
+function searchTermsForCurrentQuery(){
+  const q=norm(state.search);
+  const key=q+'|'+Object.keys(state.rows).sort().join('|');
+  if(_searchTermsCache.key===key) return _searchTermsCache;
+  const terms=new Set();
+  let playerMatched=false;
+  if(q){
+    terms.add(q);
+    collectKnownPlayerSearchGroups().forEach(group=>{
+      if(group.some(v=>v.includes(q)||q.includes(v))){
+        playerMatched=true;
+        group.forEach(v=>terms.add(v));
+      }
+    });
+  }
+  _searchTermsCache={ key, terms:[...terms].filter(Boolean), playerMatched };
+  return _searchTermsCache;
+}
+function isPlayerSearchActive(){
+  const q=norm(state.search);
+  return !!q && searchTermsForCurrentQuery().playerMatched;
+}
 function rowMatchesSearch(r){
   const q=norm(state.search);
   if(!q) return true;
-  return norm(Array.isArray(r)?r.join(' '):JSON.stringify(r)).includes(q);
+  const terms=searchTermsForCurrentQuery().terms;
+  const hay=norm(Array.isArray(r)?r.join(' '):JSON.stringify(r));
+  return terms.some(t=>hay.includes(t));
 }
 function filterRows(rows){
   return rows.filter(rowMatchesSearch);
@@ -2066,7 +2133,9 @@ function renderRiepilogoGiornate(){
 
   files.sort((a,b)=>giornataLabelFromFile(a).localeCompare(giornataLabelFromFile(b),'it',{numeric:true})).forEach(f=>{
     const parsed=parseRiepilogoFile(f);
-    const partite=filteredRiepilogoRows(parsed.partite,f);
+    const playerSearch=isPlayerSearchActive();
+    const dayPartite=parsed.partite.filter(r=>!state.selectedRiepilogoGiornata || rowGiornataKey(r,f)===state.selectedRiepilogoGiornata);
+    const partite=playerSearch ? [] : filteredRiepilogoRows(parsed.partite,f);
     let marcatori=filteredRiepilogoRows(parsed.marcatori,f);
     const totaliMarcatori=filteredRiepilogoRows(parsed.totaliMarcatori||[],f);
     // Una sola scheda: se mancano i marcatori dettagliati, usa i totali come fallback.
@@ -2074,22 +2143,24 @@ function renderRiepilogoGiornate(){
     const mvp=filteredRiepilogoRows(parsed.mvp,f);
     const portiere=filteredRiepilogoRows(parsed.portiere,f);
     const autogoalRaw=filteredRiepilogoRows(parsed.autogoal,f);
-    const autogoal=autogoalRowsForDisplay(autogoalRaw,partite);
-    const statistiche=filteredRiepilogoRows(parsed.statistiche,f);
+    const autogoal=autogoalRowsForDisplay(autogoalRaw,dayPartite);
+    const statistiche=playerSearch ? [] : filteredRiepilogoRows(parsed.statistiche,f);
     if(!partite.length && !marcatori.length && !totaliMarcatori.length && !mvp.length && !portiere.length && !autogoal.length && !statistiche.length) return;
 
     const allRows=[...partite,...marcatori,...totaliMarcatori,...mvp,...portiere,...autogoal,...statistiche];
     const labels=[...new Set(allRows.map(r=>rowGiornataLabel(r,f)).filter(Boolean))];
     const title=labels.length===1 ? labels[0] : giornataLabelFromFile(f);
-    const card=document.createElement('div'); card.className='card riepilogo-card'; card.style.marginBottom='14px';
-    const h=document.createElement('h2'); h.textContent=title; card.appendChild(h);
-    renderKpiGrid(card,deriveStats(partite,marcatori,statistiche));
+    if(!playerSearch){
+      const card=document.createElement('div'); card.className='card riepilogo-card'; card.style.marginBottom='14px';
+      const h=document.createElement('h2'); h.textContent=title; card.appendChild(h);
+      renderKpiGrid(card,deriveStats(partite,marcatori,statistiche));
 
-    const ph=document.createElement('h3'); ph.style.cssText='margin:14px 0 0;color:var(--blue);font-size:18px;text-transform:uppercase'; ph.textContent='Partite della giornata';
-    card.appendChild(ph);
-    renderPartiteRiepilogo(card,partite,f,[...marcatori,...totaliMarcatori,...mvp,...portiere,...autogoal]);
+      const ph=document.createElement('h3'); ph.style.cssText='margin:14px 0 0;color:var(--blue);font-size:18px;text-transform:uppercase'; ph.textContent='Partite della giornata';
+      card.appendChild(ph);
+      renderPartiteRiepilogo(card,partite,f,[...marcatori,...totaliMarcatori,...mvp,...portiere,...autogoal]);
 
-    content.appendChild(card);
+      content.appendChild(card);
+    }
     const tablePrefix='riepilogo_'+norm(f)+'_'+rowGiornataKey(allRows[0]||{},f);
     renderMiniSection(content,'Marcatori della giornata',marcatori,'player','Nessun marcatore indicato.',tablePrefix+'_marcatori',['sezione','giocatore','gol','goal','reti']);
     renderMiniSection(content,'MVP della giornata',mvp,'player','Nessun MVP indicato.',tablePrefix+'_mvp',['sezione','giocatore','punti']);
@@ -2098,7 +2169,7 @@ function renderRiepilogoGiornate(){
     // "Nessun miglior portiere indicato.".
     const portiereEmptyText=norm(state.search)?'':'Nessun miglior portiere indicato.';
     renderMiniSection(content,'Miglior portiere',portiere,'player',portiereEmptyText,tablePrefix+'_portiere',['sezione','giocatore','portiere','punti']);
-    renderMiniSection(content,'Autogol',autogoal,'player','',tablePrefix+'_autogoal',['giocatore']);
+    renderMiniSection(content,'Autogol',autogoal,'player','',tablePrefix+'_autogol',['giocatore']);
     if(statistiche.length) renderMiniSection(content,'Statistiche complete',statistiche,null,'',tablePrefix+'_statistiche');
     rendered++;
   });
