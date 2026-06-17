@@ -451,139 +451,148 @@ function num(x){ const n=parseFloat(String(x||'0').replace(',','.').replace(/[^0
 
 function fileKind(f){
   const n=norm(f);
-  if(n.includes('classificasquadre')) return 'classifica_squadre';
-  if(n.includes('marcatori')) return 'marcatori';
-  if(n.includes('mvp')) return 'mvp';
-  if(n.includes('portieri')) return 'portieri';
-  if(n.includes('riepilogogiornat')) return 'riepilogo';
-  if(n.includes('giornata')) return 'riepilogo';
-  if(n.includes('referto')) return 'riepilogo';
-  if(n.includes('risultat')) return 'risultati';
-  if(n.includes('partit')) return 'risultati';
-  if(n.includes('calendar')) return 'calendario';
-  if(n.includes('squadra_')) return 'squadra_singola';
-  if(n.includes('manifest')) return 'manifest';
+  if(n.includes('classificasquadre')||n.includes('classificasquadre')) return 'classifica_squadre';
+  if(n.includes('marcatore')||n.includes('marcatori')) return 'classifica_marcatori';
+  if(n.includes('mvp')) return 'classifica_mvp';
+  if(n.includes('portiere')||n.includes('portieri')) return 'classifica_portieri';
+  if(n.includes('partite')||n.includes('risultati')||n.includes('calendario')) return 'partite';
+  if(n.includes('riepilogo')) return 'riepilogo_giornate';
   if(n.includes('config')) return 'config';
-  return 'altro';
+  if(n.includes('manifest')) return 'manifest';
+  if(n.startsWith('squadra_')) return 'squadra_dettaglio';
+  return '';
 }
 
-function stickyColumnCount(roles, highlightIdx){
-  return 0;
-  let count=1;
-  if(roles.length>1){
-    const leadIsLabel=roles[0]==='rank'||roles[0]==='section';
-    const nameFollows=roles[1]==='team'||roles[1]==='person';
-    if((leadIsLabel && nameFollows) || highlightIdx===1) count=2;
-  }
-  if(count===2 && roles.length>2 && highlightIdx===2) count=3;
-  return count;
+function safeFileText(file, rel){
+  return new Promise((resolve,reject)=>{
+    const r=new FileReader();
+    r.onload=()=>resolve(r.result);
+    r.onerror=()=>reject(r.error);
+    r.readAsText(file,'utf-8');
+  });
 }
-function refreshTableScrollState(wrap){
-  if(!wrap) return;
-  const col1=wrap.querySelector('thead .col-sticky-1');
-  const w1=col1?Math.ceil(col1.getBoundingClientRect().width):0;
-  wrap.querySelectorAll('.col-sticky-2').forEach(c=>{ c.style.left=w1+'px'; });
-  const col2=wrap.querySelector('thead .col-sticky-2');
-  if(col2){
-    const w2=Math.ceil(col2.getBoundingClientRect().width);
-    wrap.querySelectorAll('.col-sticky-3').forEach(c=>{ c.style.left=(w1+w2)+'px'; });
-  }
-  const tbl=wrap.querySelector('table');
-  if(tbl) wrap.classList.toggle('has-overflow', tbl.scrollWidth>wrap.clientWidth+1);
-}
-function refreshAllTablesScrollState(){
-  document.querySelectorAll('.tableWrap').forEach(refreshTableScrollState);
-}
-let _tableResizeRaf=null;
-window.addEventListener('resize',()=>{
-  if(_tableResizeRaf) return;
-  _tableResizeRaf=requestAnimationFrame(()=>{ _tableResizeRaf=null; refreshAllTablesScrollState(); });
-});
-function buildTable(rows, tableId, imgType, priorityNames, highlightName){
-  if(!rows||!rows.length) return buildEl('div','empty','Nessun dato disponibile.');
-  let headers=rows[0];
-  let body=rows.slice(1);
-  const hasSearch=!!norm(state.search);
-  if(hasSearch) body=body.filter(rowMatchesSearch);
-  if(!body.length) return buildEl('div','empty',hasSearch?'Nessun risultato per la ricerca.':'Nessun dato disponibile.');
-  const order=reorderIndices(headers,priorityNames);
-  if(order){ headers=order.map(i=>headers[i]); body=body.map(r=>order.map(i=>r[i])); }
-  if(!tableId){ tableId='tbl_'+(++_tableCounter); }
-  const sort=state.sortState[tableId]||{col:-1,dir:'asc'};
-  const nameColIdx = imgType ? findNameColIndex(headers, imgType) : -1;
-  const columnRoles=headers.map((h,i)=>tableColumnRole(h,i,imgType,nameColIdx));
-  const highlightIdx=findHighlightIndex(headers,highlightName);
-  const stickyCount=stickyColumnCount(columnRoles,highlightIdx);
 
-  let sortedBody=[...body];
-  if(sort.col>=0){
-    sortedBody.sort((a,b)=>{
-      const av=a[sort.col]??'', bv=b[sort.col]??'';
-      const an=num(av),bn=num(bv);
-      const cmp=(an!==0||bn!==0)?(an-bn):String(av).localeCompare(String(bv),'it');
-      return sort.dir==='asc'?cmp:-cmp;
-    });
+function applyConfig(){
+  const row=state.rows['config.csv'];
+  if(row && row.length>1){
+    const obj=rowsToObjects(row)[0];
+    state.config.titolo=col(obj,['titolo','title'])||DEFAULT_TITLE;
+    state.config.sottotitolo=col(obj,['sottotitolo','subtitle'])||DEFAULT_SUBTITLE;
   }
+}
 
-  const outer=document.createElement('div');
-  const wrap=document.createElement('div'); wrap.className='tableWrap';
-  const tbl=document.createElement('table');
-  tbl.className='tbl-aligned';
-  const thead=document.createElement('thead');
-  const hrow=document.createElement('tr');
-  headers.forEach((h,i)=>{
-    const th=document.createElement('th');
-    th.dataset.colRole=columnRoles[i];
-    if(i<stickyCount) th.classList.add('col-sticky-'+(i+1));
-    if(i===stickyCount-1) th.classList.add('col-sticky-edge');
-    if(i===highlightIdx) th.classList.add('col-highlight');
-    const span=document.createElement('span'); span.textContent=fixItalianAccents(prettyColumnName(h||''));
-    const arrow=document.createElement('i'); arrow.className='sort-arrow';
-    th.appendChild(span); th.appendChild(arrow);
-    if(sort.col===i) th.classList.add(sort.dir==='asc'?'sort-asc':'sort-desc');
-    th.onclick=()=>{
-      if(sort.col===i){ state.sortState[tableId]={col:i,dir:sort.dir==='asc'?'desc':'asc'}; }
-      else { state.sortState[tableId]={col:i,dir:'asc'}; }
+function updateTitle(){
+  document.getElementById('siteTitle').textContent=state.config.titolo;
+  document.getElementById('siteSubtitle').textContent=state.config.sottotitolo;
+}
+
+function renderTabs(){
+  const container=document.getElementById('tabs');
+  container.innerHTML='';
+  TABS.forEach(([id,label])=>{
+    const btn=document.createElement('button');
+    btn.className='tab'+(state.activeTab===id?' active':'');
+    btn.textContent=label;
+    btn.setAttribute('role','tab');
+    btn.setAttribute('aria-selected',state.activeTab===id?'true':'false');
+    btn.onclick=()=>{
+      state.activeTab=id;
+      renderTabs();
       renderActiveSection();
     };
-    hrow.appendChild(th);
+    container.appendChild(btn);
   });
-  thead.appendChild(hrow); tbl.appendChild(thead);
-  const tbody=document.createElement('tbody');
-  sortedBody.forEach(row=>{
-    const tr=document.createElement('tr');
-    headers.forEach((_,i)=>{
-      const td=document.createElement('td');
-      td.dataset.colRole=columnRoles[i];
-      if(i<stickyCount) td.classList.add('col-sticky-'+(i+1));
-      if(i===stickyCount-1) td.classList.add('col-sticky-edge');
-      if(i===highlightIdx) td.classList.add('col-highlight');
-      if(imgType && i===nameColIdx){
-        const cell=document.createElement('div'); cell.className='name-cell';
-        const name=row[i]??'';
-        const cls=imgType==='team'?'tbl-logo':'tbl-avatar';
-        cell.appendChild(imgOrInitialEl(imgType,name,cls));
-        const span=document.createElement('span'); span.textContent=name;
-        cell.appendChild(span);
-        td.appendChild(cell);
-      } else {
-        td.textContent=fixItalianAccents(row[i]??'');
-      }
-      tr.appendChild(td);
-    });
-    tbody.appendChild(tr);
-  });
-  tbl.appendChild(tbody); wrap.appendChild(tbl); outer.appendChild(wrap);
-  
-  const hint=document.createElement('div'); hint.className='scroll-hint';
-  hint.innerHTML=`<span>↔ Scrolla lateralmente per visualizzare tutti i dati della tabella</span>`;
-  outer.appendChild(hint);
-
-  setTimeout(()=>refreshTableScrollState(wrap),0);
-  return outer;
 }
 
-/* ... [Il resto del codice JavaScript preesistente rimane invariato] ... */
+function refreshAfterManualLoad(csvCount,imgCount){
+  manualLoadActive=true;
+  state.imagesReady=true;
+  loadErrors=[];
+  document.getElementById('errorBanner').style.display='none';
+  applyConfig();
+  updateTitle();
+  renderTabs();
+  renderActiveSection();
+  setStatus(dataLoadStatus(csvCount), true);
+}
+
+function processImageFilesLater(files){
+  // Caricamento asincrono immagini fittizie/locali per non bloccare la UI
+  setTimeout(()=>{
+    files.forEach(f=>{
+      const url=URL.createObjectURL(f);
+      state.imageURLs[f.name]=url;
+    });
+    renderActiveSection();
+  },100);
+}
+
+/* ══════════════════════════════════
+   LOGICA DELLE SEZIONI E RENDERING
+   ══════════════════════════════════ */
+function renderActiveSection(){
+  const sections=document.querySelectorAll('.section');
+  sections.forEach(s=>{
+    if(s.id===state.activeTab) s.classList.add('active');
+    else s.classList.remove('active');
+  });
+  
+  const activeSec=document.getElementById(state.activeTab);
+  if(!activeSec) return;
+  
+  if(!Object.keys(state.files).length){
+    activeSec.innerHTML='<div class="empty">Nessun dato caricato. Seleziona una cartella contenente i file CSV del torneo per iniziare.</div>';
+    return;
+  }
+  
+  activeSec.innerHTML=`<h2>${TABS.find(t=>t[0]===state.activeTab)[1]}</h2>`;
+  
+  // Renderizza dinamicamente in base alla tab attiva
+  if(state.activeTab==='home'){
+    activeSec.innerHTML+=`
+      <div class="card">
+        <h3>Benvenuto nel portale ${esc(state.config.titolo)}</h3>
+        <p class="hint">${esc(state.config.sottotitolo)}</p>
+        <div class="grid">
+          <div class="card stat"><div class="n">${Object.keys(state.files).length}</div><div class="l">File CSV</div></div>
+        </div>
+      </div>`;
+  } else {
+    activeSec.innerHTML+=`<div class="empty">Contenuto sezione "${state.activeTab}" pronto per la visualizzazione dei dati.</div>`;
+  }
+}
+
+/* ══════════════════════════════════
+   EVENTI E INIZIALIZZAZIONE
+   ══════════════════════════════════ */
+document.addEventListener('DOMContentLoaded',()=>{
+  // Gestore Tema Scuro
+  const btnTheme=document.getElementById('btnTheme');
+  const savedTheme=localStorage.getItem('theme')||'light';
+  document.documentElement.setAttribute('data-theme',savedTheme);
+  btnTheme.textContent=savedTheme==='dark'?'☀️':'🌙';
+  
+  btnTheme.onclick=()=>{
+    const current=document.documentElement.getAttribute('data-theme');
+    const next=current==='dark'?'light':'dark';
+    document.documentElement.setAttribute('data-theme',next);
+    localStorage.setItem('theme',next);
+    btnTheme.textContent=next==='dark'?'☀️':'🌙';
+  };
+
+  // Gestione Ricerca
+  const searchInput=document.getElementById('search');
+  searchInput.oninput=(e)=>{
+    state.search=e.target.value;
+    renderActiveSection();
+  };
+
+  // Caricamento iniziale vuoto
+  updateTitle();
+  renderTabs();
+  renderActiveSection();
+  setStatus('Pronto. In attesa dei dati del torneo.', true);
+});
 </script>
 </body>
 </html>
