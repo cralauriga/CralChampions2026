@@ -138,7 +138,7 @@
     .chart-card{position:relative;overflow:hidden;border-radius:22px;background:linear-gradient(145deg,var(--panel),rgba(15,90,168,.06));}
     .chart-card::before{content:'';position:absolute;inset:-90px -70px auto auto;width:210px;height:210px;border-radius:50%;background:radial-gradient(circle,rgba(15,90,168,.16),transparent 68%);pointer-events:none}
     .chart-card h2{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-    .chart-card h2::before{content:'✦';font-size:18px;color:var(--gold)}
+    .chart-card h2::before{content:attr(data-icon);font-size:18px;color:var(--gold)}
     .chart-container{position:relative;width:100%;height:276px;margin-top:4px}
     .chart-label-strip{position:relative;height:58px;margin-top:2px;padding:0;overflow:visible}
     .chart-label-item{position:absolute;top:0;transform:translateX(-50%);width:54px;display:flex;justify-content:center;align-items:flex-start}
@@ -763,10 +763,14 @@ function nameSearchVariants(value){
     .replace(/\(.*?\)/g,' ')
     .replace(/\s+\d+\s*(?:gol|goal|reti?)\b/ig,'')
     .replace(/\b(?:gol|goal|reti?)\s*\d+\b/ig,'')
+    // Nei CSV i portieri possono essere scritti come "Nome PT": PT/P è ruolo,
+    // non deve diventare un termine di ricerca, altrimenti filtrando un portiere
+    // vengono agganciati tutti gli altri portieri.
+    .replace(/\b(?:pt|p|portiere|goalkeeper)\b/ig,' ')
     .trim());
   if(!clean) return [];
   const variants=new Set([norm(clean)]);
-  const parts=clean.split(/\s+/).map(norm).filter(Boolean);
+  const parts=clean.split(/\s+/).map(norm).filter(x=>x && x.length>=3);
   parts.forEach(x=>variants.add(x));
   if(parts.length>1){
     variants.add(parts.slice().reverse().join(''));
@@ -820,6 +824,33 @@ function searchTermsForCurrentQuery(){
 function isPlayerSearchActive(){
   const q=norm(state.search);
   return !!q && searchTermsForCurrentQuery().playerMatched;
+}
+function isGoalkeeperRow(row){
+  const role=fieldLoose(row,['ruolo','role','posizione','position']);
+  const roleKey=norm(role);
+  if(roleKey==='p'||roleKey==='pt'||roleKey.includes('portiere')||roleKey.includes('goalkeeper')) return true;
+  if(roleInitial(role)==='P') return true;
+  const name=playerNameFromRow(row);
+  return /\bPT\b/i.test(String(name||''));
+}
+function isGoalkeeperSearchActive(){
+  if(!isPlayerSearchActive()) return false;
+
+  for(const f of sectionFiles('squadra')){
+    const matched=rowsToObjects(state.rows[f]).filter(rowMatchesPersonSearch);
+    if(matched.length) return matched.some(isGoalkeeperRow);
+  }
+
+  for(const f of sectionFiles('portieri')){
+    if(rowsToObjects(state.rows[f]).some(rowMatchesPersonSearch)) return true;
+  }
+
+  for(const f of sectionFiles('riepilogo')){
+    const parsed=parseRiepilogoFile(f);
+    if((parsed.portiere||[]).some(rowMatchesPersonSearch)) return true;
+  }
+
+  return false;
 }
 function personValuesFromRow(row){
   const values=[];
@@ -1303,9 +1334,9 @@ function renderHome(){
   // Grafici
   const chartsWrap=document.createElement('div'); chartsWrap.className='grid';
   const c1=document.createElement('div'); c1.className='card chart-card'; c1.style.gridColumn='span 2';
-  c1.innerHTML='<h2>Top marcatori</h2><div class="chart-container"><canvas id="chartMarcatori"></canvas></div><div class="chart-label-strip" id="chartMarcatoriLabels" aria-label="Immagini top marcatori"></div>';
+  c1.innerHTML='<h2 data-icon="💣">Top marcatori</h2><div class="chart-container"><canvas id="chartMarcatori"></canvas></div><div class="chart-label-strip" id="chartMarcatoriLabels" aria-label="Immagini top marcatori"></div>';
   const c2=document.createElement('div'); c2.className='card chart-card'; c2.style.gridColumn='span 2';
-  c2.innerHTML='<h2>Punti squadre</h2><div class="chart-container"><canvas id="chartPunti"></canvas></div><div class="chart-label-strip" id="chartPuntiLabels" aria-label="Loghi squadre classifica"></div>';
+  c2.innerHTML='<h2 data-icon="🏆">Punti squadre</h2><div class="chart-container"><canvas id="chartPunti"></canvas></div><div class="chart-label-strip" id="chartPuntiLabels" aria-label="Loghi squadre classifica"></div>';
   chartsWrap.appendChild(c1); chartsWrap.appendChild(c2);
   el.appendChild(chartsWrap);
 
@@ -1357,6 +1388,8 @@ function loadChartJs(){
 
 function renderClassifiche(){
   const el=document.getElementById('classifiche'); el.innerHTML='';
+  const playerSearch=isPlayerSearchActive();
+  const goalkeeperSearch=isGoalkeeperSearchActive();
   const sections=[
     ['classifica_squadre','CLASSIFICA SQUADRE','team',['posizione','squadra','puntifinali']],
     ['marcatori','CLASSIFICA MARCATORI','player',['posizione','pos','rank','giocatore','gol','goal','reti']],
@@ -1365,15 +1398,31 @@ function renderClassifiche(){
   ];
   let found=false;
   sections.forEach(([kind,title,imgType,priority])=>{
+    // Con filtro su un giocatore non mostrare classifiche non pertinenti.
+    if(playerSearch && kind==='classifica_squadre') return;
+    // Se il giocatore filtrato è un portiere, la classifica MVP non è pertinente.
+    if(playerSearch && goalkeeperSearch && kind==='mvp') return;
+
     sectionFiles(kind).forEach(f=>{
+      let tableRows=state.rows[f];
+
+      // In ricerca giocatore non mostrare card vuote: se quel giocatore non è
+      // presente in Marcatori/MVP/Portieri, la relativa sezione sparisce.
+      if(playerSearch){
+        const headers=(state.rows[f]&&state.rows[f][0]) ? state.rows[f][0] : [];
+        const matchedObjects=rowsToObjects(state.rows[f]).filter(rowMatchesPersonSearch);
+        if(!matchedObjects.length) return;
+        tableRows=[headers,...matchedObjects.map(r=>headers.map(h=>r[h]??''))];
+      }
+
       found=true;
       const card=document.createElement('div'); card.className='card'; card.style.marginBottom='14px';
       const h=document.createElement('h2'); h.className='upper'; h.textContent=title;
-      card.appendChild(h); card.appendChild(buildTable(state.rows[f],norm(f),imgType,priority));
+      card.appendChild(h); card.appendChild(buildTable(tableRows,norm(f),imgType,priority));
       el.appendChild(card);
     });
   });
-  if(!found) el.appendChild(buildEl('div','empty','Nessuna classifica trovata.'));
+  if(!found) el.appendChild(buildEl('div','empty',playerSearch?'Nessun dato classifica trovato per il giocatore filtrato.':'Nessuna classifica trovata.'));
 }
 
 function renderStatistiche(){
