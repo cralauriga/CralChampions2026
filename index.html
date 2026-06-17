@@ -66,14 +66,24 @@
     /* ── Ricerca ── */
     .search{width:100%;padding:13px 14px;border:1px solid var(--line);border-radius:14px;margin:0 0 14px;font-size:15px;background:var(--panel);color:var(--ink)}
     /* ── Tabelle ── */
-    .tableWrap{overflow:auto;border-radius:16px;border:1px solid var(--line);background:var(--panel)}
+    /* Le colonne importanti (posizione, nome, valore principale) restano sempre
+       leggibili per intero e fisse a sinistra; il resto si legge scorrendo verso
+       destra: .tableWrap diventa scrollabile invece di schiacciare ogni colonna
+       nello schermo (niente più sigle illeggibili tipo "P.." o "9..."). */
+    .tableWrap{position:relative;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;border-radius:16px;border:1px solid var(--line);background:var(--panel)}
     table{width:100%;border-collapse:collapse}
-    table.tbl-aligned{table-layout:fixed}
-    th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+    th,td{padding:10px 13px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
     table.tbl-aligned th,table.tbl-aligned td{overflow:hidden;text-overflow:ellipsis}
-    table.tbl-aligned th[data-col-role=rank],table.tbl-aligned td[data-col-role=rank],
-    table.tbl-aligned th[data-col-role=metric],table.tbl-aligned td[data-col-role=metric],
-    table.tbl-aligned th[data-col-role=round],table.tbl-aligned td[data-col-role=round]{text-align:center}
+    table.tbl-aligned th[data-col-role=rank],table.tbl-aligned td[data-col-role=rank]{min-width:46px;max-width:60px;text-align:center}
+    table.tbl-aligned th[data-col-role=metric],table.tbl-aligned td[data-col-role=metric]{min-width:54px;max-width:80px;text-align:center;font-variant-numeric:tabular-nums}
+    table.tbl-aligned th[data-col-role=round],table.tbl-aligned td[data-col-role=round]{min-width:64px;max-width:100px;text-align:center}
+    table.tbl-aligned th[data-col-role=team],table.tbl-aligned td[data-col-role=team],
+    table.tbl-aligned th[data-col-role=person],table.tbl-aligned td[data-col-role=person]{min-width:130px;max-width:220px}
+    table.tbl-aligned th[data-col-role=date],table.tbl-aligned td[data-col-role=date]{min-width:84px;max-width:120px}
+    table.tbl-aligned th[data-col-role=match],table.tbl-aligned td[data-col-role=match]{min-width:150px;max-width:230px}
+    table.tbl-aligned th[data-col-role=section],table.tbl-aligned td[data-col-role=section]{min-width:100px;max-width:160px}
+    table.tbl-aligned th[data-col-role=note],table.tbl-aligned td[data-col-role=note]{min-width:130px;max-width:230px}
+    table.tbl-aligned th[data-col-role=text],table.tbl-aligned td[data-col-role=text]{min-width:90px;max-width:170px}
     th{background:var(--soft);font-size:12px;text-transform:none;color:var(--muted);cursor:pointer;user-select:none;position:relative}
     th:hover{background:var(--line)}
     th .sort-arrow{margin-left:4px;opacity:.4;font-style:normal}
@@ -81,13 +91,30 @@
     th.sort-asc .sort-arrow::after{content:'▲'}
     th.sort-desc .sort-arrow::after{content:'▼'}
     th:not(.sort-asc):not(.sort-desc) .sort-arrow::after{content:'⇅'}
-    tr:hover td{background:var(--soft)}
+    tbody tr:nth-child(even) td{background:var(--soft)}
+    tr:hover td{background:var(--line)}
+    /* Colonne fisse a sinistra (posizione + nome [+ valore principale]):
+       restano visibili mentre il resto della tabella scorre verso destra. */
+    .tbl-aligned .col-sticky-1,.tbl-aligned .col-sticky-2,.tbl-aligned .col-sticky-3{position:sticky;z-index:1;background:var(--panel)}
+    .tbl-aligned .col-sticky-1{left:0}
+    .tbl-aligned thead .col-sticky-1,.tbl-aligned thead .col-sticky-2,.tbl-aligned thead .col-sticky-3{background:var(--soft)}
+    .tbl-aligned tr:hover .col-sticky-1,.tbl-aligned tr:hover .col-sticky-2,.tbl-aligned tr:hover .col-sticky-3{background:var(--line)}
+    .tbl-aligned .col-sticky-edge{box-shadow:6px 0 10px -6px rgba(0,0,0,.30)}
+    /* Colonna con il valore che decide la classifica (es. Punti, Gol): resta in evidenza */
+    .tbl-aligned th.col-highlight{color:var(--blue);background:rgba(15,90,168,.12)}
+    .tbl-aligned td.col-highlight{font-weight:800;color:var(--blue);background:rgba(15,90,168,.07)}
+    [data-theme="dark"] .tbl-aligned th.col-highlight{background:rgba(59,130,246,.18)}
+    [data-theme="dark"] .tbl-aligned td.col-highlight{background:rgba(59,130,246,.13)}
+    /* Suggerimento "scorri", mostrato solo quando la tabella è più larga dello schermo */
+    .scroll-hint{display:none;align-items:center;gap:6px;justify-content:center;font-size:12px;color:var(--muted);padding:7px 2px 0}
+    .tableWrap.has-overflow + .scroll-hint{display:flex}
     .pill{display:inline-block;border-radius:999px;padding:4px 9px;background:#eef4ff;color:var(--blue);font-weight:800}
     .tbl-avatar-col{width:1%;white-space:nowrap}
     .tbl-logo,.tbl-avatar{width:30px;height:30px;border-radius:8px;object-fit:cover;background:#dbe7f6;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:11px;color:var(--blue);flex:0 0 auto}
     .tbl-avatar{border-radius:50%}
     .mini-logo{width:26px;height:26px;border-radius:7px;object-fit:cover;background:#dbe7f6;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:10px;color:var(--blue);flex:0 0 auto}
-    .name-cell{display:flex;align-items:center;gap:9px}
+    .name-cell{display:flex;align-items:center;gap:9px;min-width:0}
+    .name-cell span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
     /* ── Squadre ── */
     .teams{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
     .teamCard{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:16px}
@@ -158,7 +185,7 @@
     .ok{color:var(--green);font-weight:700}
     /* ── Responsive ── */
     @media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}.status{margin-left:0;width:100%}.riepilogo-kpi.is-wide,.riepilogo-kpi.is-match-max{grid-column:span 1}}
-    @media(max-width:560px){.wrap{padding:14px}.grid{grid-template-columns:1fr}.hero{padding:22px}.match{display:block}.score{margin:6px 0}.riepilogo-match .match-team{max-width:none}.riepilogo-match .match-name{font-size:16px}.riepilogo-match .score{text-align:left;font-size:26px;min-width:0}.riepilogo-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.riepilogo-kpi.is-wide,.riepilogo-kpi.is-match-max,.riepilogo-kpi.is-scorer{grid-column:1/-1}.tableWrap{font-size:13px}th,td{padding:8px 8px}.tbl-logo,.tbl-avatar{width:24px;height:24px}.mini-logo{width:22px;height:22px}.name-cell{gap:7px}}
+    @media(max-width:560px){.wrap{padding:14px}.grid{grid-template-columns:1fr}.hero{padding:22px}.match{display:block}.score{margin:6px 0}.riepilogo-match .match-team{max-width:none}.riepilogo-match .match-name{font-size:16px}.riepilogo-match .score{text-align:left;font-size:26px;min-width:0}.riepilogo-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.riepilogo-kpi.is-wide,.riepilogo-kpi.is-match-max,.riepilogo-kpi.is-scorer{grid-column:1/-1}.tableWrap{font-size:13px}th,td{padding:9px 9px}table.tbl-aligned th[data-col-role=rank],table.tbl-aligned td[data-col-role=rank]{min-width:40px;max-width:54px}table.tbl-aligned th[data-col-role=section],table.tbl-aligned td[data-col-role=section]{min-width:70px;max-width:110px}table.tbl-aligned th[data-col-role=team],table.tbl-aligned td[data-col-role=team],table.tbl-aligned th[data-col-role=person],table.tbl-aligned td[data-col-role=person]{min-width:118px;max-width:150px}table.tbl-aligned th[data-col-role=metric],table.tbl-aligned td[data-col-role=metric]{min-width:48px;max-width:68px}.tbl-logo,.tbl-avatar{width:24px;height:24px}.mini-logo{width:22px;height:22px}.name-cell{gap:7px}}
     @media print{.toolbar,.tabs,.search,#errorBanner{display:none}.section{display:block}.wrap{max-width:none}.card,.hero{box-shadow:none}}
     @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
   </style>
@@ -977,24 +1004,58 @@ function tableColumnRole(header,index,imgType,nameColIdx){
   if(n.includes('note') || n.includes('descrizione') || n.includes('commento')) return 'note';
   return 'text';
 }
-function tableColumnWidths(roles){
-  const base={rank:10,section:14,person:30,team:24,metric:12,round:10,date:12,match:26,note:24,text:18};
-  const vals=roles.map(r=>base[r]||base.text);
-  const sum=vals.reduce((a,b)=>a+b,0)||100;
-  return vals.map(v=>Math.max(7,Math.round((v*10000/sum))/100));
+function findHighlightIndex(headers, highlightCandidates){
+  if(!highlightCandidates) return -1;
+  const list=Array.isArray(highlightCandidates)?highlightCandidates:[highlightCandidates];
+  const normed=headers.map(h=>norm(h));
+  for(const name of list){
+    const nc=norm(name);
+    const idx=normed.findIndex(h=>h===nc||h.includes(nc));
+    if(idx>=0) return idx;
+  }
+  return -1;
 }
-function appendTableColGroup(tbl,roles){
-  const widths=tableColumnWidths(roles);
-  const cg=document.createElement('colgroup');
-  roles.forEach((role,i)=>{
-    const colEl=document.createElement('col');
-    colEl.style.width=widths[i]+'%';
-    colEl.dataset.colRole=role;
-    cg.appendChild(colEl);
-  });
-  tbl.appendChild(cg);
+/* Quante colonne iniziali restano fisse a sinistra durante lo scroll.
+   La 1ª (posizione/sezione) è sempre fissa. La 2ª lo è se è il nome
+   (squadra/giocatore) subito dopo, oppure se è lei il valore evidenziato.
+   La 3ª lo è solo se è il valore evidenziato (es. Punti, Gol) e arriva
+   subito dopo posizione+nome: così le colonne davvero importanti restano
+   sempre leggibili per intero, e si scorre solo per leggere il resto. */
+function stickyColumnCount(roles, highlightIdx){
+  let count=1;
+  if(roles.length>1){
+    const leadIsLabel=roles[0]==='rank'||roles[0]==='section';
+    const nameFollows=roles[1]==='team'||roles[1]==='person';
+    if((leadIsLabel && nameFollows) || highlightIdx===1) count=2;
+  }
+  if(count===2 && roles.length>2 && highlightIdx===2) count=3;
+  return count;
 }
-function buildTable(rows, tableId, imgType, priorityNames){
+/* Misura la larghezza reale della 1ª (e 2ª) colonna fissa per posizionare
+   esattamente di fianco quelle successive, e segnala se la tabella è più
+   larga dello schermo (per mostrare il suggerimento "scorri"). */
+function refreshTableScrollState(wrap){
+  if(!wrap) return;
+  const col1=wrap.querySelector('thead .col-sticky-1');
+  const w1=col1?Math.ceil(col1.getBoundingClientRect().width):0;
+  wrap.querySelectorAll('.col-sticky-2').forEach(c=>{ c.style.left=w1+'px'; });
+  const col2=wrap.querySelector('thead .col-sticky-2');
+  if(col2){
+    const w2=Math.ceil(col2.getBoundingClientRect().width);
+    wrap.querySelectorAll('.col-sticky-3').forEach(c=>{ c.style.left=(w1+w2)+'px'; });
+  }
+  const tbl=wrap.querySelector('table');
+  if(tbl) wrap.classList.toggle('has-overflow', tbl.scrollWidth>wrap.clientWidth+1);
+}
+function refreshAllTablesScrollState(){
+  document.querySelectorAll('.tableWrap').forEach(refreshTableScrollState);
+}
+let _tableResizeRaf=null;
+window.addEventListener('resize',()=>{
+  if(_tableResizeRaf) return;
+  _tableResizeRaf=requestAnimationFrame(()=>{ _tableResizeRaf=null; refreshAllTablesScrollState(); });
+});
+function buildTable(rows, tableId, imgType, priorityNames, highlightName){
   if(!rows||!rows.length) return buildEl('div','empty','Nessun dato disponibile.');
   let headers=rows[0];
   let body=rows.slice(1);
@@ -1007,6 +1068,8 @@ function buildTable(rows, tableId, imgType, priorityNames){
   const sort=state.sortState[tableId]||{col:-1,dir:'asc'};
   const nameColIdx = imgType ? findNameColIndex(headers, imgType) : -1;
   const columnRoles=headers.map((h,i)=>tableColumnRole(h,i,imgType,nameColIdx));
+  const highlightIdx=findHighlightIndex(headers,highlightName);
+  const stickyCount=stickyColumnCount(columnRoles,highlightIdx);
 
   let sortedBody=[...body];
   if(sort.col>=0){
@@ -1018,15 +1081,18 @@ function buildTable(rows, tableId, imgType, priorityNames){
     });
   }
 
+  const outer=document.createElement('div');
   const wrap=document.createElement('div'); wrap.className='tableWrap';
   const tbl=document.createElement('table');
   tbl.className='tbl-aligned';
-  appendTableColGroup(tbl,columnRoles);
   const thead=document.createElement('thead');
   const hrow=document.createElement('tr');
   headers.forEach((h,i)=>{
     const th=document.createElement('th');
     th.dataset.colRole=columnRoles[i];
+    if(i<stickyCount) th.classList.add('col-sticky-'+(i+1));
+    if(i===stickyCount-1) th.classList.add('col-sticky-edge');
+    if(i===highlightIdx) th.classList.add('col-highlight');
     const span=document.createElement('span'); span.textContent=fixItalianAccents(prettyColumnName(h||''));
     const arrow=document.createElement('i'); arrow.className='sort-arrow';
     th.appendChild(span); th.appendChild(arrow);
@@ -1045,6 +1111,9 @@ function buildTable(rows, tableId, imgType, priorityNames){
     headers.forEach((_,i)=>{
       const td=document.createElement('td');
       td.dataset.colRole=columnRoles[i];
+      if(i<stickyCount) td.classList.add('col-sticky-'+(i+1));
+      if(i===stickyCount-1) td.classList.add('col-sticky-edge');
+      if(i===highlightIdx) td.classList.add('col-highlight');
       if(imgType && i===nameColIdx){
         const cell=document.createElement('div'); cell.className='name-cell';
         const name=row[i]??'';
@@ -1060,8 +1129,11 @@ function buildTable(rows, tableId, imgType, priorityNames){
     });
     tbody.appendChild(tr);
   });
-  tbl.appendChild(tbody); wrap.appendChild(tbl);
-  return wrap;
+  tbl.appendChild(tbody); wrap.appendChild(tbl); outer.appendChild(wrap);
+  const hint=document.createElement('div'); hint.className='scroll-hint'; hint.textContent='⟷ Scorri per leggere altri dati';
+  outer.appendChild(hint);
+  requestAnimationFrame(()=>refreshTableScrollState(wrap));
+  return outer;
 }
 function buildEl(tag,cls,text){ const el=document.createElement(tag); el.className=cls; if(text) el.textContent=fixItalianAccents(text); return el; }
 
@@ -1433,13 +1505,13 @@ function renderClassifiche(){
   const playerSearch=isPlayerSearchActive();
   const goalkeeperSearch=isGoalkeeperSearchActive();
   const sections=[
-    ['classifica_squadre','CLASSIFICA SQUADRE','team',['posizione','squadra','puntifinali']],
-    ['marcatori','CLASSIFICA MARCATORI','player',['posizione','pos','rank','giocatore','gol','goal','reti']],
-    ['mvp','CLASSIFICA MVP','player',['posizione','pos','rank','giocatore','puntimvp','punti']],
-    ['portieri','CLASSIFICA PORTIERI','player',['posizione','pos','rank','giocatore','portiere','player','punti']]
+    ['classifica_squadre','CLASSIFICA SQUADRE','team',['posizione','squadra','puntifinali'],['puntifinali']],
+    ['marcatori','CLASSIFICA MARCATORI','player',['posizione','pos','rank','giocatore','gol','goal','reti'],['gol','goal','reti']],
+    ['mvp','CLASSIFICA MVP','player',['posizione','pos','rank','giocatore','puntimvp','punti'],['puntimvp','punti']],
+    ['portieri','CLASSIFICA PORTIERI','player',['posizione','pos','rank','giocatore','portiere','player','punti'],['punti']]
   ];
   let found=false;
-  sections.forEach(([kind,title,imgType,priority])=>{
+  sections.forEach(([kind,title,imgType,priority,highlight])=>{
     // Con filtro su un giocatore non mostrare classifiche non pertinenti.
     if(playerSearch && kind==='classifica_squadre') return;
     // Se il giocatore filtrato è un portiere, la classifica MVP non è pertinente.
@@ -1460,7 +1532,7 @@ function renderClassifiche(){
       found=true;
       const card=document.createElement('div'); card.className='card'; card.style.marginBottom='14px';
       const h=document.createElement('h2'); h.className='upper'; h.textContent=title;
-      card.appendChild(h); card.appendChild(buildTable(tableRows,norm(f),imgType,priority));
+      card.appendChild(h); card.appendChild(buildTable(tableRows,norm(f),imgType,priority,highlight));
       el.appendChild(card);
     });
   });
@@ -1488,7 +1560,7 @@ function renderStatistiche(){
     card.appendChild(hint);
     const headers=['Giocatore','Media gol/partita','Squadra','Gol','Partite'];
     const body=rows.map(x=>[x.giocatore,x.media.toFixed(2).replace('.',','),x.squadra,x.gol,x.partite]);
-    card.appendChild(buildTable([headers,...body],'stats_giocatori'));
+    card.appendChild(buildTable([headers,...body],'stats_giocatori',null,null,'media gol/partita'));
   }
   el.appendChild(card);
 }
@@ -2263,7 +2335,7 @@ function autogoalRowsForDisplay(rows, partite){
   });
 }
 
-function renderMiniSection(parent,title,rows,imgType,emptyText,tableId,priorityNames){
+function renderMiniSection(parent,title,rows,imgType,emptyText,tableId,priorityNames,highlightName){
   // Se non ci sono righe e non è richiesto un messaggio vuoto, non mostra proprio la sezione.
   if(!rows.length && !emptyText) return;
 
@@ -2272,7 +2344,7 @@ function renderMiniSection(parent,title,rows,imgType,emptyText,tableId,priorityN
   card.appendChild(h);
   if(rows.length){
     const tableRows=objectsToRows(rows);
-    if(tableRows.length) card.appendChild(buildTable(tableRows,tableId||norm(title),imgType,priorityNames));
+    if(tableRows.length) card.appendChild(buildTable(tableRows,tableId||norm(title),imgType,priorityNames,highlightName));
     else if(emptyText) card.appendChild(buildEl('div','empty',emptyText));
   }
   else if(emptyText){ card.appendChild(buildEl('div','empty',emptyText)); }
@@ -2374,13 +2446,13 @@ function renderRiepilogoGiornate(){
       content.appendChild(card);
     }
     const tablePrefix='riepilogo_'+norm(f)+'_'+rowGiornataKey(allRows[0]||{},f);
-    renderMiniSection(content,'Marcatori della giornata',marcatori,'player',playerSearch?'':'Nessun marcatore indicato.',tablePrefix+'_marcatori',['sezione','giocatore','marcatore','gol','goal','reti']);
-    renderMiniSection(content,'MVP della giornata',mvp,'player',playerSearch?'':'Nessun MVP indicato.',tablePrefix+'_mvp',['sezione','giocatore','mvp','punti']);
+    renderMiniSection(content,'Marcatori della giornata',marcatori,'player',playerSearch?'':'Nessun marcatore indicato.',tablePrefix+'_marcatori',['sezione','giocatore','marcatore','gol','goal','reti'],['gol','goal','reti']);
+    renderMiniSection(content,'MVP della giornata',mvp,'player',playerSearch?'':'Nessun MVP indicato.',tablePrefix+'_mvp',['sezione','giocatore','mvp','punti'],['punti']);
     // Durante una ricerca testuale non mostrare la scheda vuota del miglior portiere:
     // se il giocatore filtrato non è portiere, la sezione scompare invece di mostrare
     // "Nessun miglior portiere indicato.".
     const portiereEmptyText=(playerSearch||norm(state.search))?'':'Nessun miglior portiere indicato.';
-    renderMiniSection(content,'Miglior portiere',portiere,'player',portiereEmptyText,tablePrefix+'_portiere',['sezione','giocatore','portiere','punti']);
+    renderMiniSection(content,'Miglior portiere',portiere,'player',portiereEmptyText,tablePrefix+'_portiere',['sezione','giocatore','portiere','punti'],['punti']);
     renderMiniSection(content,'Autogol',autogoal,'player','',tablePrefix+'_autogol',['giocatore']);
     if(statistiche.length) renderMiniSection(content,'Statistiche complete',statistiche,null,'',tablePrefix+'_statistiche');
     rendered++;
