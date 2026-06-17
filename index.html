@@ -93,18 +93,51 @@
     th:not(.sort-asc):not(.sort-desc) .sort-arrow::after{content:'⇅'}
     tbody tr:nth-child(even) td{background:var(--soft)}
     tr:hover td{background:var(--line)}
-    /* Colonne fisse a sinistra (posizione + nome [+ valore principale]):
-       restano visibili mentre il resto della tabella scorre verso destra. */
-    .tbl-aligned .col-sticky-1,.tbl-aligned .col-sticky-2,.tbl-aligned .col-sticky-3{position:sticky;z-index:1;background:var(--panel)}
-    .tbl-aligned .col-sticky-1{left:0}
-    .tbl-aligned thead .col-sticky-1,.tbl-aligned thead .col-sticky-2,.tbl-aligned thead .col-sticky-3{background:var(--soft)}
-    .tbl-aligned tr:hover .col-sticky-1,.tbl-aligned tr:hover .col-sticky-2,.tbl-aligned tr:hover .col-sticky-3{background:var(--line)}
-    .tbl-aligned .col-sticky-edge{box-shadow:6px 0 10px -6px rgba(0,0,0,.30)}
+    /* Colonne NON fisse: tutte scorrono normalmente.
+       Il colore evidenzia il dato principale ma non blocca lo scorrimento. */
+    .tbl-aligned .col-sticky-1,.tbl-aligned .col-sticky-2,.tbl-aligned .col-sticky-3{position:static;background:inherit}
+    .tbl-aligned .col-sticky-1{left:auto}
+    .tbl-aligned thead .col-sticky-1,.tbl-aligned thead .col-sticky-2,.tbl-aligned thead .col-sticky-3{background:inherit}
+    .tbl-aligned tr:hover .col-sticky-1,.tbl-aligned tr:hover .col-sticky-2,.tbl-aligned tr:hover .col-sticky-3{background:inherit}
+    .tbl-aligned .col-sticky-edge{box-shadow:none}
     /* Colonna con il valore che decide la classifica (es. Punti, Gol): resta in evidenza */
     .tbl-aligned th.col-highlight{color:var(--blue);background:rgba(15,90,168,.12)}
     .tbl-aligned td.col-highlight{font-weight:800;color:var(--blue);background:rgba(15,90,168,.07)}
     [data-theme="dark"] .tbl-aligned th.col-highlight{background:rgba(59,130,246,.18)}
     [data-theme="dark"] .tbl-aligned td.col-highlight{background:rgba(59,130,246,.13)}
+    
+    /* Miglioramenti scroll mobile */
+    .tableWrap{
+      scroll-behavior:smooth;
+      -webkit-overflow-scrolling:touch;
+      scrollbar-width:thin;
+    }
+    .tableWrap.has-overflow::after{
+      content:'⇠ Scorri';
+      position:sticky;
+      right:8px;
+      float:right;
+      bottom:8px;
+      z-index:5;
+      font-size:11px;
+      font-weight:700;
+      padding:4px 8px;
+      border-radius:999px;
+      background:rgba(15,90,168,.12);
+      color:var(--blue);
+      pointer-events:none;
+    }
+    @media(max-width:560px){
+      .tableWrap{
+        border-radius:14px;
+      }
+      .tableWrap.has-overflow{
+        background:
+          linear-gradient(to left, rgba(15,90,168,.10), transparent 24px) right center/24px 100% no-repeat,
+          var(--panel);
+      }
+    }
+
     /* Suggerimento "scorri", mostrato solo quando la tabella è più larga dello schermo */
     .scroll-hint{display:none;align-items:center;gap:6px;justify-content:center;font-size:12px;color:var(--muted);padding:7px 2px 0}
     .tableWrap.has-overflow + .scroll-hint{display:flex}
