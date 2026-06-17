@@ -68,7 +68,12 @@
     /* ── Tabelle ── */
     .tableWrap{overflow:auto;border-radius:16px;border:1px solid var(--line);background:var(--panel)}
     table{width:100%;border-collapse:collapse}
+    table.tbl-aligned{table-layout:fixed}
     th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+    table.tbl-aligned th,table.tbl-aligned td{overflow:hidden;text-overflow:ellipsis}
+    table.tbl-aligned th[data-col-role=rank],table.tbl-aligned td[data-col-role=rank],
+    table.tbl-aligned th[data-col-role=metric],table.tbl-aligned td[data-col-role=metric],
+    table.tbl-aligned th[data-col-role=round],table.tbl-aligned td[data-col-role=round]{text-align:center}
     th{background:var(--soft);font-size:12px;text-transform:none;color:var(--muted);cursor:pointer;user-select:none;position:relative}
     th:hover{background:var(--line)}
     th .sort-arrow{margin-left:4px;opacity:.4;font-style:normal}
@@ -957,6 +962,38 @@ function reorderIndices(headers, priorityNames){
   headers.forEach((_,i)=>{ if(!used.has(i)) order.push(i); });
   return order;
 }
+function tableColumnRole(header,index,imgType,nameColIdx){
+  const n=norm(header);
+  if(imgType && index===nameColIdx) return imgType==='team' ? 'team' : 'person';
+  if(['pos','posizione','rank','classifica'].includes(n)) return 'rank';
+  if(['sezione','tipo','categoria'].includes(n)) return 'section';
+  if(['giocatore','marcatore','calciatore','player','nomegiocatore','nomecompleto','cognomeenome','portiere'].includes(n)) return 'person';
+  if(n.includes('giocatore') || n.includes('marcatore') || n.includes('portiere')) return 'person';
+  if(['squadra','team','club'].includes(n) || n.includes('squadra')) return 'team';
+  if(['giornata','turno','round'].includes(n)) return 'round';
+  if(['data','giorno','date'].includes(n)) return 'date';
+  if(['partita','match','gara','incontro'].includes(n)) return 'match';
+  if(n.includes('punti') || n.includes('gol') || n.includes('goal') || n.includes('reti') || ['pts','pg','gf','gs','dr','pt','mvp'].includes(n)) return 'metric';
+  if(n.includes('note') || n.includes('descrizione') || n.includes('commento')) return 'note';
+  return 'text';
+}
+function tableColumnWidths(roles){
+  const base={rank:10,section:14,person:30,team:24,metric:12,round:10,date:12,match:26,note:24,text:18};
+  const vals=roles.map(r=>base[r]||base.text);
+  const sum=vals.reduce((a,b)=>a+b,0)||100;
+  return vals.map(v=>Math.max(7,Math.round((v*10000/sum))/100));
+}
+function appendTableColGroup(tbl,roles){
+  const widths=tableColumnWidths(roles);
+  const cg=document.createElement('colgroup');
+  roles.forEach((role,i)=>{
+    const colEl=document.createElement('col');
+    colEl.style.width=widths[i]+'%';
+    colEl.dataset.colRole=role;
+    cg.appendChild(colEl);
+  });
+  tbl.appendChild(cg);
+}
 function buildTable(rows, tableId, imgType, priorityNames){
   if(!rows||!rows.length) return buildEl('div','empty','Nessun dato disponibile.');
   let headers=rows[0];
@@ -969,6 +1006,7 @@ function buildTable(rows, tableId, imgType, priorityNames){
   if(!tableId){ tableId='tbl_'+(++_tableCounter); }
   const sort=state.sortState[tableId]||{col:-1,dir:'asc'};
   const nameColIdx = imgType ? findNameColIndex(headers, imgType) : -1;
+  const columnRoles=headers.map((h,i)=>tableColumnRole(h,i,imgType,nameColIdx));
 
   let sortedBody=[...body];
   if(sort.col>=0){
@@ -982,10 +1020,13 @@ function buildTable(rows, tableId, imgType, priorityNames){
 
   const wrap=document.createElement('div'); wrap.className='tableWrap';
   const tbl=document.createElement('table');
+  tbl.className='tbl-aligned';
+  appendTableColGroup(tbl,columnRoles);
   const thead=document.createElement('thead');
   const hrow=document.createElement('tr');
   headers.forEach((h,i)=>{
     const th=document.createElement('th');
+    th.dataset.colRole=columnRoles[i];
     const span=document.createElement('span'); span.textContent=fixItalianAccents(prettyColumnName(h||''));
     const arrow=document.createElement('i'); arrow.className='sort-arrow';
     th.appendChild(span); th.appendChild(arrow);
@@ -1003,6 +1044,7 @@ function buildTable(rows, tableId, imgType, priorityNames){
     const tr=document.createElement('tr');
     headers.forEach((_,i)=>{
       const td=document.createElement('td');
+      td.dataset.colRole=columnRoles[i];
       if(imgType && i===nameColIdx){
         const cell=document.createElement('div'); cell.className='name-cell';
         const name=row[i]??'';
