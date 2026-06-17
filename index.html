@@ -821,6 +821,64 @@ function isPlayerSearchActive(){
   const q=norm(state.search);
   return !!q && searchTermsForCurrentQuery().playerMatched;
 }
+function personValuesFromRow(row){
+  const values=[];
+  const add=(v)=>{
+    const clean=smartSpace(v);
+    if(clean && !values.some(x=>norm(x)===norm(clean))) values.push(clean);
+  };
+
+  const directFields=[
+    ['giocatore','marcatore','calciatore','player','nome giocatore','nome completo','cognome e nome','mvp','portiere','autore','autorete'],
+    ['miglior marcatore','top scorer','migliore in campo','man of the match','motm']
+  ];
+  directFields.forEach(names=>add(firstPresent(row,[names])));
+
+  const nome=exactVal(row,['nome','first name','firstname']);
+  const cognome=exactVal(row,['cognome','last name','lastname']);
+  if(nome || cognome){
+    add(uniqueNameParts([nome,cognome]));
+    add(uniqueNameParts([cognome,nome]));
+  }
+
+  Object.keys(row||{}).forEach(k=>{
+    const nk=norm(k);
+    if(
+      nk==='giocatore' || nk==='marcatore' || nk==='player' || nk==='calciatore' ||
+      nk==='mvp' || nk==='portiere' || nk==='nome' || nk==='cognome' ||
+      nk.includes('nomegiocatore') || nk.includes('nomecompleto') || nk.includes('cognomeenome') ||
+      nk.includes('marcatore') || nk.includes('miglioreincampo') || nk.includes('manofthematch')
+    ){
+      add(row[k]);
+    }
+  });
+
+  return values;
+}
+function rowMatchesPersonSearch(row){
+  const q=norm(state.search);
+  if(!q) return false;
+  const terms=searchTermsForCurrentQuery().terms;
+  const variants=[];
+  personValuesFromRow(row).forEach(v=>{
+    nameSearchVariants(v).forEach(x=>{ if(x && !variants.includes(x)) variants.push(x); });
+  });
+  return variants.some(v=>terms.some(t=>v.includes(t)||t.includes(v)));
+}
+function isRiepilogoPlayerSearch(parsed,file){
+  const q=norm(state.search);
+  if(!q) return false;
+  if(isPlayerSearchActive()) return true;
+  const selected=state.selectedRiepilogoGiornata;
+  const rows=[
+    ...(parsed.marcatori||[]),
+    ...(parsed.totaliMarcatori||[]),
+    ...(parsed.mvp||[]),
+    ...(parsed.portiere||[]),
+    ...(parsed.autogoal||[])
+  ].filter(r=>!selected || rowGiornataKey(r,file)===selected);
+  return rows.some(rowMatchesPersonSearch);
+}
 function rowMatchesSearch(r){
   const q=norm(state.search);
   if(!q) return true;
@@ -838,7 +896,7 @@ function filterRows(rows){
 let _tableCounter=0;
 /* Nomi di colonna candidati per individuare la colonna "nome" da affiancare a logo/avatar */
 const NAME_COL_CANDIDATES_TEAM   = ['squadra','team','nome squadra','club'];
-const NAME_COL_CANDIDATES_PLAYER = ['giocatore','nome','calciatore','player','cognome e nome','portiere'];
+const NAME_COL_CANDIDATES_PLAYER = ['giocatore','marcatore','nome','calciatore','player','cognome e nome','portiere'];
 
 function findNameColIndex(headers, imgType){
   const candidates = imgType==='team' ? NAME_COL_CANDIDATES_TEAM : NAME_COL_CANDIDATES_PLAYER;
@@ -1114,7 +1172,7 @@ function playerFullName(obj){
   if(nome || cognome) return uniqueNameParts([nome,cognome]);
 
   const direct = fieldLoose(obj,[
-    'giocatore','nome giocatore','nome completo','calciatore','player','atleta','cognome e nome'
+    'giocatore','marcatore','nome giocatore','nome completo','calciatore','player','atleta','cognome e nome'
   ]);
   if(direct) return smartSpace(direct);
 
@@ -1130,7 +1188,7 @@ function playerDisplayName(obj){
   if(nome || cognome) return uniqueNameParts([cognome,nome]);
 
   const direct = fieldLoose(obj,[
-    'cognome e nome','giocatore','nome giocatore','nome completo','calciatore','player','atleta'
+    'cognome e nome','giocatore','marcatore','nome giocatore','nome completo','calciatore','player','atleta'
   ]);
   if(direct) return smartSpace(direct);
 
@@ -1148,7 +1206,7 @@ function playerImageNames(obj){
     playerDisplayName(obj),
     uniqueNameParts([nome,cognome]),
     uniqueNameParts([cognome,nome]),
-    fieldLoose(obj,['giocatore','nome giocatore','nome completo','calciatore','player','atleta','cognome e nome'])
+    fieldLoose(obj,['giocatore','marcatore','nome giocatore','nome completo','calciatore','player','atleta','cognome e nome'])
   ];
   return candidates.filter(Boolean).filter((v,i,a)=>a.findIndex(x=>norm(x)===norm(v))===i);
 }
@@ -1169,6 +1227,60 @@ function teamMatchCounts(){
   return counts;
 }
 
+function maxNumericGiornata(entries){
+  const nums=(entries||[])
+    .map(x=>Array.isArray(x)?(giornataNumberFromText(x[0])||giornataNumberFromText(x[1])):giornataNumberFromText(x))
+    .map(x=>parseInt(x,10))
+    .filter(Number.isFinite);
+  return nums.length ? Math.max(...nums) : 0;
+}
+function calendarioGiornateOptions(){
+  const map=new Map();
+  sectionFiles('calendario').forEach(f=>{
+    const raw=state.files[f]||'';
+
+    // Calendario a blocchi: GIORNATA 1, GIORNATA 2, ecc.
+    const block=parseBlockCalendar(raw);
+    block.forEach(g=>{
+      const key=giornataNumberFromText(g.label)||norm(g.label);
+      if(key && !map.has(key)) map.set(key,g.label);
+    });
+
+    // Calendario piatto: colonna Giornata/Turno/Round.
+    rowsToObjects(state.rows[f]||[]).forEach(r=>{
+      const g=firstPresent(r,[['giornata','turno','round']]);
+      const key=giornataNumberFromText(g)||norm(g);
+      if(key && !map.has(key)) map.set(key, giornataNumberFromText(g)?('Giornata '+giornataNumberFromText(g)):String(g));
+    });
+
+    // Fallback robusto sul testo grezzo, utile anche se il CSV ha righe non tabellari.
+    const re=/giornata[_\s-]*(\d+)/gi;
+    let m;
+    while((m=re.exec(raw))!==null){
+      const key=String(parseInt(m[1],10));
+      if(key && !map.has(key)) map.set(key,'Giornata '+key);
+    }
+  });
+  return [...map.entries()].sort((a,b)=>String(a[1]).localeCompare(String(b[1]),'it',{numeric:true}));
+}
+function totalCalendarioGiornate(){
+  const options=calendarioGiornateOptions();
+  return maxNumericGiornata(options) || options.length;
+}
+function latestRiepilogoGiornata(){
+  const options=riepilogoGiornateOptions(sectionFiles('riepilogo'));
+  return maxNumericGiornata(options) || options.length;
+}
+function homeProgressStatus(){
+  const total=totalCalendarioGiornate();
+  const latest=latestRiepilogoGiornata();
+  if(!total && !latest) return null;
+  return {
+    value: total ? ((latest||0)+'/'+total) : String(latest||0),
+    label: 'Dati aggiornati a giornata'
+  };
+}
+
 function renderHome(){
   const el=document.getElementById('home'); el.innerHTML='';
   const players=allPlayersFromTeams(), matches=matchRows();
@@ -1177,6 +1289,8 @@ function renderHome(){
     [players.length,'Giocatori'],
     [matches.length,'Partite disputate']
   ];
+  const progress=homeProgressStatus();
+  if(progress) stats.push([progress.value,progress.label]);
   const grid=document.createElement('div'); grid.className='grid';
   stats.forEach(([n,l])=>{
     const c=document.createElement('div'); c.className='card stat';
@@ -1320,11 +1434,17 @@ function renderSquadre(){
   const el=document.getElementById('squadre'); el.innerHTML='';
   const files=sectionFiles('squadra');
   if(!files.length){ el.appendChild(buildEl('div','empty','Nessun CSV squadra trovato. Usa nomi tipo squadra_NomeSquadra.csv.')); return; }
+  const playerSearch=isPlayerSearchActive();
   const wrap=document.createElement('div'); wrap.className='teams';
   files.forEach(f=>{
     const name=teamNameFromFile(f);
     const players=rowsToObjects(state.rows[f]);
-    const filtered=filterRows(players);
+    const filtered=playerSearch ? players.filter(rowMatchesPersonSearch) : filterRows(players);
+
+    // Se il filtro è riconosciuto come ricerca giocatore, mostra solo la squadra
+    // che contiene quel giocatore. Le altre card spariscono invece di restare vuote.
+    if(playerSearch && !filtered.length) return;
+
     const card=document.createElement('div'); card.className='teamCard';
     const head=document.createElement('div'); head.className='teamHead';
     head.appendChild(imgOrInitialEl('team',name,'logo'));
@@ -1353,6 +1473,7 @@ function renderSquadre(){
     });
     wrap.appendChild(card);
   });
+  if(playerSearch && !wrap.children.length) return;
   el.appendChild(wrap);
 }
 
@@ -1526,7 +1647,7 @@ function splitPeopleList(value){
     .filter(Boolean);
 }
 function playerNameFromRow(r){
-  const direct=firstPresent(r,[['giocatore','calciatore','player','nome giocatore','nome completo','cognome e nome','mvp','portiere']]);
+  const direct=firstPresent(r,[['giocatore','marcatore','calciatore','player','nome giocatore','nome completo','cognome e nome','mvp','portiere']]);
   if(direct) return smartSpace(direct);
   const nome=exactVal(r,['nome']);
   const cognome=exactVal(r,['cognome']);
@@ -2133,8 +2254,8 @@ function renderRiepilogoGiornate(){
 
   files.sort((a,b)=>giornataLabelFromFile(a).localeCompare(giornataLabelFromFile(b),'it',{numeric:true})).forEach(f=>{
     const parsed=parseRiepilogoFile(f);
-    const playerSearch=isPlayerSearchActive();
     const dayPartite=parsed.partite.filter(r=>!state.selectedRiepilogoGiornata || rowGiornataKey(r,f)===state.selectedRiepilogoGiornata);
+    const playerSearch=isRiepilogoPlayerSearch(parsed,f);
     const partite=playerSearch ? [] : filteredRiepilogoRows(parsed.partite,f);
     let marcatori=filteredRiepilogoRows(parsed.marcatori,f);
     const totaliMarcatori=filteredRiepilogoRows(parsed.totaliMarcatori||[],f);
@@ -2162,12 +2283,12 @@ function renderRiepilogoGiornate(){
       content.appendChild(card);
     }
     const tablePrefix='riepilogo_'+norm(f)+'_'+rowGiornataKey(allRows[0]||{},f);
-    renderMiniSection(content,'Marcatori della giornata',marcatori,'player','Nessun marcatore indicato.',tablePrefix+'_marcatori',['sezione','giocatore','gol','goal','reti']);
-    renderMiniSection(content,'MVP della giornata',mvp,'player','Nessun MVP indicato.',tablePrefix+'_mvp',['sezione','giocatore','punti']);
+    renderMiniSection(content,'Marcatori della giornata',marcatori,'player',playerSearch?'':'Nessun marcatore indicato.',tablePrefix+'_marcatori',['sezione','giocatore','marcatore','gol','goal','reti']);
+    renderMiniSection(content,'MVP della giornata',mvp,'player',playerSearch?'':'Nessun MVP indicato.',tablePrefix+'_mvp',['sezione','giocatore','mvp','punti']);
     // Durante una ricerca testuale non mostrare la scheda vuota del miglior portiere:
     // se il giocatore filtrato non è portiere, la sezione scompare invece di mostrare
     // "Nessun miglior portiere indicato.".
-    const portiereEmptyText=norm(state.search)?'':'Nessun miglior portiere indicato.';
+    const portiereEmptyText=(playerSearch||norm(state.search))?'':'Nessun miglior portiere indicato.';
     renderMiniSection(content,'Miglior portiere',portiere,'player',portiereEmptyText,tablePrefix+'_portiere',['sezione','giocatore','portiere','punti']);
     renderMiniSection(content,'Autogol',autogoal,'player','',tablePrefix+'_autogol',['giocatore']);
     if(statistiche.length) renderMiniSection(content,'Statistiche complete',statistiche,null,'',tablePrefix+'_statistiche');
@@ -2180,6 +2301,11 @@ function renderRiepilogoGiornate(){
 
 function renderMatchSection(sectionId, kind){
   const el=document.getElementById(sectionId); el.innerHTML='';
+
+  // Con un filtro riconosciuto come giocatore, i risultati partita non sono
+  // dati del singolo giocatore: lascia il tab vuoto, come gia avviene per il calendario.
+  if(kind==='risultati' && isPlayerSearchActive()) return;
+
   const files=sectionFiles(kind);
   if(!files.length){ el.appendChild(buildEl('div','empty','Nessuna partita trovata.')); return; }
 
