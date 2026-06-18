@@ -556,6 +556,43 @@ function imagePlaceholderEl(cls,name){
   return d;
 }
 
+/* Prova tutte le candidate IN PARALLELO e risolve con la prima che carica con successo
+   (o null se nessuna esiste). Molto più rapido del tentativo sequenziale uno alla volta:
+   il tempo totale è quello della richiesta più lenta, non la somma di tutte. */
+function probeFirstWorkingImage(candidates){
+  return new Promise(resolve=>{
+    if(!candidates.length){ resolve(null); return; }
+    let pending=candidates.length, settled=false;
+    candidates.forEach(src=>{
+      const probe=new Image();
+      probe.onload=()=>{ if(!settled){ settled=true; resolve(src); } };
+      probe.onerror=()=>{ pending--; if(!settled && pending<=0) resolve(null); };
+      probe.src=src;
+    });
+  });
+}
+
+/* Observer condiviso: avvia il probe delle immagini solo quando l'elemento è vicino al
+   viewport, così non scarichiamo centinaia di candidate per avatar non ancora visibili. */
+let _avatarIO=null;
+function avatarObserver(){
+  if(_avatarIO) return _avatarIO;
+  if(!('IntersectionObserver' in window)){
+    _avatarIO={ observe(el){ const cb=el._onAvatarVisible; if(cb) cb(); }, unobserve(){} };
+    return _avatarIO;
+  }
+  _avatarIO=new IntersectionObserver(entries=>{
+    entries.forEach(entry=>{
+      if(entry.isIntersecting){
+        _avatarIO.unobserve(entry.target);
+        const cb=entry.target._onAvatarVisible;
+        if(cb) cb();
+      }
+    });
+  },{rootMargin:'250px'});
+  return _avatarIO;
+}
+
 /* Crea elemento img o div iniziali — NESSUN innerHTML con dati utente.
    Accetta anche una lista di nomi alternativi: utile quando nei CSV squadra
    il giocatore è Cognome Nome, ma negli altri CSV o nei file immagine è Nome Cognome. */
@@ -570,7 +607,7 @@ function imgOrInitialEl(type,name,cls){
     return imagePlaceholderEl(cls,mainName);
   }
   const img=document.createElement('img');
-  img.className=cls; img.alt=mainName; img.loading='lazy'; img.decoding='async';
+  img.className=cls; img.alt=mainName; img.decoding='async';
 
   const prefixes=type==='team'?['immagini/squadre/','data/immagini/squadre/']:['immagini/giocatori/','data/immagini/giocatori/'];
   const candidates=[];
@@ -587,20 +624,21 @@ function imgOrInitialEl(type,name,cls){
     }
   });
 
-  let fallbackIndex=0;
-  img.onerror=function(){
-    if(String(this.src||'').startsWith('blob:')){
-      const d=document.createElement('div'); d.className=cls; d.textContent=initials(mainName); if(!d.textContent) d.classList.add('is-empty-fallback'); this.replaceWith(d);
-      return;
-    }
-    while(fallbackIndex<candidates.length && candidates[fallbackIndex]===this.src) fallbackIndex++;
-    if(fallbackIndex<candidates.length){
-      this.src=candidates[fallbackIndex++];
-      return;
-    }
-    const d=document.createElement('div'); d.className=cls; d.textContent=initials(mainName); if(!d.textContent) d.classList.add('is-empty-fallback'); this.replaceWith(d);
+  /* Quando l'avatar diventa visibile (o subito, se IntersectionObserver non è
+     supportato), prova tutte le candidate in parallelo invece che una alla volta:
+     con decine di combinazioni nome/cartella/estensione, il tentativo sequenziale
+     poteva richiedere diversi secondi prima di mostrare le iniziali. */
+  img._onAvatarVisible=()=>{
+    probeFirstWorkingImage(candidates).then(src=>{
+      if(!img.isConnected) return; // la sezione è cambiata nel frattempo
+      if(src){
+        img.src=src; // stessa referenza: eventuali title/alt impostati dal chiamante restano validi
+      }else{
+        const d=document.createElement('div'); d.className=cls; d.textContent=initials(mainName); if(!d.textContent) d.classList.add('is-empty-fallback'); img.replaceWith(d);
+      }
+    });
   };
-  img.src=candidates[fallbackIndex++] || '';
+  avatarObserver().observe(img);
   return img;
 }
 
