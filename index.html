@@ -502,7 +502,7 @@ function sectionFiles(kind){ return Object.keys(state.rows).filter(f=>fileKind(f
 /* ══════════════════════════════════
    IMMAGINI
    ══════════════════════════════════ */
-function imageExts(){ return ['png','jpg','jpeg','webp','gif','svg']; }
+function imageExts(){ return ['png','jpg','jpeg']; }
 function baseNoExt(path){ return String(path||'').split('/').pop().replace(/\.[^.]+$/,''); }
 function imageFolderToken(type){ return type==='team'?'immaginisquadre':'immaginigiocatori'; }
 
@@ -530,7 +530,7 @@ function imageFor(type,name){
 
   const folder=imageFolderToken(type);
   const candidates=Object.entries(state.imageURLs||{}).map(([k,url])=>{
-    const rawBase=(k.split('/').pop()||k).replace(/(png|jpg|jpeg|webp|gif|svg)$/i,'');
+    const rawBase=(k.split('/').pop()||k).replace(/(png|jpg|jpeg)$/i,'');
     const base=norm(rawBase);
     let score=999;
     if(k.includes(folder) && base===key) score=0;
@@ -545,7 +545,7 @@ function imageFor(type,name){
 
   const prefix=type==='team'?'immagini/squadre/':'immagini/giocatori/';
   const dataPrefix=type==='team'?'data/immagini/squadre/':'data/immagini/giocatori/';
-  // Fallback statici: prova prima PNG, poi altri formati. Utile quando apri index.html senza selezionare cartella.
+  // Fallback statici: prova solo PNG/JPG/JPEG. Utile quando apri index.html senza selezionare cartella.
   return prefix+key+'.png';
 }
 
@@ -562,7 +562,40 @@ function imagePlaceholderEl(cls,name){
    La cache evita che lo stesso grafico/avatar riesegua gli stessi probe quando Chart.js
    forza resize/update ravvicinati o quando si cambia tab e si torna indietro. */
 const _imageProbeCache=new Map();
-function clearImageProbeCache(){ _imageProbeCache.clear(); }
+/* Cache sincrona degli URL immagine già risolti.
+   Serve soprattutto quando si cambia tab: gli elementi <img> vengono ricreati,
+   ma il src già trovato può essere assegnato subito senza mostrare placeholder/probe. */
+const _resolvedImageURLCache=new Map();
+function imageCacheCompositeKey(type,names){
+  return type+':'+(names||[]).map(norm).filter(Boolean).join('|');
+}
+function cachedResolvedImage(type,names){
+  const composite=imageCacheCompositeKey(type,names);
+  const keys=[composite,...(names||[]).map(n=>type+':'+norm(n)).filter(Boolean)];
+  for(const key of keys){
+    if(_resolvedImageURLCache.has(key)){
+      const value=_resolvedImageURLCache.get(key);
+      if(value) return value;
+    }
+  }
+  // Il fallimento viene memorizzato solo per la combinazione esatta di nomi,
+  // così un alias più completo può ancora trovare l'immagine in un'altra scheda.
+  return _resolvedImageURLCache.get(composite);
+}
+function rememberResolvedImage(type,names,src){
+  const composite=imageCacheCompositeKey(type,names);
+  if(!composite) return;
+  if(src){
+    _resolvedImageURLCache.set(composite,src);
+    (names||[]).forEach(n=>{ const key=norm(n); if(key) _resolvedImageURLCache.set(type+':'+key,src); });
+  }else{
+    _resolvedImageURLCache.set(composite,null);
+  }
+}
+function clearImageProbeCache(){
+  _imageProbeCache.clear();
+  _resolvedImageURLCache.clear();
+}
 function probeFirstWorkingImage(candidates){
   const unique=[...new Set((candidates||[]).filter(Boolean))];
   if(!unique.length) return Promise.resolve(null);
@@ -616,8 +649,12 @@ function imgOrInitialEl(type,name,cls){
   if(manualLoadActive && state.imagesReady===false){
     return imagePlaceholderEl(cls,mainName);
   }
+
   const img=document.createElement('img');
-  img.className=cls; img.alt=mainName; img.decoding='async';
+  img.className=cls;
+  img.alt=mainName;
+  img.decoding='async';
+  img.loading='lazy';
 
   const prefixes=type==='team'?['immagini/squadre/','data/immagini/squadre/']:['immagini/giocatori/','data/immagini/giocatori/'];
   const candidates=[];
@@ -634,24 +671,44 @@ function imgOrInitialEl(type,name,cls){
     }
   });
 
+  // Caso importante per Classifiche/Squadre/Riepilogo:
+  // se l'immagine era già stata trovata in una scheda precedente, assegna subito src
+  // senza attendere Promise/IntersectionObserver e senza mostrare il caricamento.
+  const cached=cachedResolvedImage(type,names);
+  if(cached){
+    img.src=cached;
+    return img;
+  }
+  if(cached===null){
+    const d=document.createElement('div');
+    d.className=cls;
+    d.textContent=initials(mainName);
+    if(!d.textContent) d.classList.add('is-empty-fallback');
+    return d;
+  }
+
   /* Quando l'avatar diventa visibile (o subito, se IntersectionObserver non è
-     supportato), prova tutte le candidate in parallelo invece che una alla volta:
-     con decine di combinazioni nome/cartella/estensione, il tentativo sequenziale
-     poteva richiedere diversi secondi prima di mostrare le iniziali. */
+     supportato), prova tutte le candidate in parallelo invece che una alla volta.
+     La prima URL valida viene salvata in _resolvedImageURLCache, così i successivi
+     cambi tab riusano subito la stessa immagine. */
   img._onAvatarVisible=()=>{
     probeFirstWorkingImage(candidates).then(src=>{
+      rememberResolvedImage(type,names,src);
       if(!img.isConnected) return; // la sezione è cambiata nel frattempo
       if(src){
         img.src=src; // stessa referenza: eventuali title/alt impostati dal chiamante restano validi
       }else{
-        const d=document.createElement('div'); d.className=cls; d.textContent=initials(mainName); if(!d.textContent) d.classList.add('is-empty-fallback'); img.replaceWith(d);
+        const d=document.createElement('div');
+        d.className=cls;
+        d.textContent=initials(mainName);
+        if(!d.textContent) d.classList.add('is-empty-fallback');
+        img.replaceWith(d);
       }
     });
   };
   avatarObserver().observe(img);
   return img;
 }
-
 /* ══════════════════════════════════
    LOGO CRAL
    ══════════════════════════════════ */
@@ -686,7 +743,7 @@ function logoCandidates(){
   // Fallback statici: funzionano sia con index.html nella root sia con asset dentro data/,
   // provando più nomi/estensioni comuni nel caso il file non si chiami esattamente logo_cral.png.
   const names=['logo_cral','logo-cral','logocral','cral_logo','cral-logo','cral','logo'];
-  const exts=['png','jpg','jpeg','webp','svg'];
+  const exts=['png','jpg','jpeg'];
   const dirs=['immagini/','data/immagini/','./immagini/','./data/immagini/'];
   const generated=[];
   dirs.forEach(d=>names.forEach(n=>exts.forEach(e=>generated.push(d+n+'.'+e))));
@@ -2296,6 +2353,7 @@ function riepilogoScorerPhotoEl(value){
   img.className='riepilogo-kpi-scorer-photo';
   img.alt=name||'Miglior marcatore';
   img.decoding='async';
+  img.loading='lazy';
   if(!name) return img;
   const key=norm(name);
   const candidates=[];
@@ -2305,9 +2363,18 @@ function riepilogoScorerPhotoEl(value){
     imageExts().forEach(ext=>add(prefix+key+'.'+ext));
   });
 
-  // Anche qui niente retry sequenziale: risolvi una volta la candidata valida,
-  // poi assegna src. L'immagine resta nascosta finché non è pronta, come prima.
+  const cached=cachedResolvedImage('player',[name]);
+  if(cached){
+    img.src=cached;
+    img.classList.add('is-loaded');
+    return img;
+  }
+  if(cached===null) return img;
+
+  // Anche qui niente retry sequenziale: risolvi una volta la candidata valida
+  // e memorizzala, così il KPI non lampeggia quando rientri nel tab Riepilogo.
   probeFirstWorkingImage(candidates).then(src=>{
+    rememberResolvedImage('player',[name],src);
     if(!src || !img.isConnected) return;
     img.onload=()=>img.classList.add('is-loaded');
     img.onerror=()=>img.classList.remove('is-loaded');
@@ -2766,7 +2833,7 @@ async function safeFileText(file, relPath){
 /* Lettura robusta per Chrome: immagini senza await, CSV con timeout e fallback. */
 async function ingestPickedFile(file, relPath, basename){
   const name=basename||file.name;
-  if(/\.(jpg|jpeg|png|webp|gif|svg)$/i.test(name)){
+  if(/\.(jpg|jpeg|png)$/i.test(name)){
     rememberImage(relPath||name,file);
     state._imgCount=(state._imgCount||0)+1;
     return true;
@@ -2898,7 +2965,7 @@ async function loadFolder(fileList){
     .filter(file=>/\.csv$/i.test(file.name))
     .sort((a,b)=>String(a.webkitRelativePath||a.name).localeCompare(String(b.webkitRelativePath||b.name),'it'));
   const imageFiles=files
-    .filter(file=>/\.(jpg|jpeg|png|webp|gif|svg)$/i.test(file.name))
+    .filter(file=>/\.(jpg|jpeg|png)$/i.test(file.name))
     .sort((a,b)=>String(a.webkitRelativePath||a.name).localeCompare(String(b.webkitRelativePath||b.name),'it'));
 
   if(!csvFiles.length){
