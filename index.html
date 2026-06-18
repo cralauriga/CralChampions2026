@@ -2610,6 +2610,42 @@ function deriveStats(partite, marcatori, stats, totaliMarcatori){
     ['Miglior marcatore',migliorMarcatore]
   ].filter(x=>String(x[1]||'').trim()!=='' && x[1]!==0);
 }
+
+function riepilogoStatisticheWithTopScorerTie(stats,partite,marcatori,totaliMarcatori){
+  const topScorerLabel=riepilogoTopScorerLabel(partite,marcatori,totaliMarcatori);
+  if(!topScorerLabel || !norm(topScorerLabel).startsWith('parimeritotra')) return stats||[];
+
+  const rows=(stats||[]).map(r=>({...r}));
+  const isStatNameKey=k=>['statistica','voce','dato','nome','metrica','campo'].some(n=>norm(k)===norm(n)||norm(k).includes(norm(n)));
+  const isValueKey=k=>['valore','value','totale','numero'].some(n=>norm(k)===norm(n)||norm(k).includes(norm(n)));
+  const findKey=(obj,predicate,fallback)=>Object.keys(obj||{}).find(predicate)||fallback;
+  const isTopScorerRow=r=>{
+    const label=firstPresent(r,[['statistica','voce','dato','nome','metrica','campo']]) || Object.values(r||{})[0] || '';
+    const key=norm(label);
+    return key.includes('migliormarcatore') || key.includes('topscorer');
+  };
+
+  let target=rows.find(isTopScorerRow);
+  if(target){
+    const valueKey=findKey(target,isValueKey,Object.keys(target)[1]||'Valore');
+    target[valueKey]=topScorerLabel;
+    return rows;
+  }
+
+  const sample=rows[0] || {};
+  const statKey=findKey(sample,isStatNameKey,'Statistica');
+  const valueKey=findKey(sample,isValueKey,'Valore');
+  const sectionKey=findKey(sample,k=>norm(k)==='sezione','');
+  const dayKey=findKey(sample,k=>['giornata','turno','round'].includes(norm(k)),'');
+  const source=[...(stats||[]),...(partite||[]),...(marcatori||[]),...(totaliMarcatori||[])].find(r=>r&&Object.keys(r).length) || {};
+  const added={};
+  if(sectionKey) added[sectionKey]='Statistica';
+  if(dayKey && source[dayKey]) added[dayKey]=source[dayKey];
+  added[statKey]='Miglior marcatore';
+  added[valueKey]=topScorerLabel;
+  rows.push(added);
+  return rows;
+}
 function renderKpiGrid(parent, items){
   if(!items.length) return;
   const priority=['partite giocate','gol totali','media gol','clean sheet','miglior marcatore','partita con più gol','partita con piu gol'];
@@ -2799,15 +2835,16 @@ function renderRiepilogoGiornate(){
     const autogoalRaw=filteredRiepilogoRows(parsed.autogoal,f);
     const autogoal=autogoalRowsForDisplay(autogoalRaw,dayPartite);
     const statistiche=playerSearch ? [] : filteredRiepilogoRows(parsed.statistiche,f);
-    if(!partite.length && !marcatori.length && !totaliMarcatori.length && !mvp.length && !portiere.length && !autogoal.length && !statistiche.length) return;
+    const statisticheRiepilogo=playerSearch ? [] : riepilogoStatisticheWithTopScorerTie(statistiche,partite,marcatori,totaliMarcatori);
+    if(!partite.length && !marcatori.length && !totaliMarcatori.length && !mvp.length && !portiere.length && !autogoal.length && !statisticheRiepilogo.length) return;
 
-    const allRows=[...partite,...marcatori,...totaliMarcatori,...mvp,...portiere,...autogoal,...statistiche];
+    const allRows=[...partite,...marcatori,...totaliMarcatori,...mvp,...portiere,...autogoal,...statisticheRiepilogo];
     const labels=[...new Set(allRows.map(r=>rowGiornataLabel(r,f)).filter(Boolean))];
     const title=labels.length===1 ? labels[0] : giornataLabelFromFile(f);
     if(!playerSearch){
       const card=document.createElement('div'); card.className='card riepilogo-card'; card.style.marginBottom='14px';
       const h=document.createElement('h2'); h.textContent=title; card.appendChild(h);
-      renderKpiGrid(card,deriveStats(partite,marcatori,statistiche,totaliMarcatori));
+      renderKpiGrid(card,deriveStats(partite,marcatori,statisticheRiepilogo,totaliMarcatori));
 
       const ph=document.createElement('h3'); ph.style.cssText='margin:14px 0 0;color:var(--blue);font-size:18px;text-transform:uppercase'; ph.textContent='Partite della giornata';
       card.appendChild(ph);
@@ -2824,7 +2861,7 @@ function renderRiepilogoGiornate(){
     const portiereEmptyText=(playerSearch||norm(state.search))?'':'Nessun miglior portiere indicato.';
     renderMiniSection(content,'Miglior portiere',portiere,'player',portiereEmptyText,tablePrefix+'_portiere',['sezione','giocatore','portiere','punti'],['punti']);
     renderMiniSection(content,'Autogol',autogoal,'player','',tablePrefix+'_autogol',['giocatore']);
-    if(statistiche.length) renderMiniSection(content,'Statistiche complete',statistiche,null,'',tablePrefix+'_statistiche');
+    if(statisticheRiepilogo.length) renderMiniSection(content,'Statistiche complete',statisticheRiepilogo,null,'',tablePrefix+'_statistiche');
     rendered++;
   });
 
