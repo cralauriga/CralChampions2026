@@ -2418,8 +2418,22 @@ function riepilogoScorerPhotoEl(value){
 }
 
 function riepilogoGoalNumberFromText(value){
-  const m=String(value||'').match(/[-+]?\d+(?:[,.]\d+)?/);
-  return m ? num(m[0]) : null;
+  const text=String(value||'').trim();
+  if(!text) return null;
+  if(/^[-+]?\d+(?:[,.]\d+)?$/.test(text)) return num(text);
+  const patterns=[
+    /(?:^|\s)(?:x|×)\s*(\d+(?:[,.]\d+)?)(?=\s|$)/i,
+    /\(\s*(\d+(?:[,.]\d+)?)\s*(?:gol|goal|reti?)?\s*\)/i,
+    /(\d+(?:[,.]\d+)?)\s*(?:gol|goal|reti?)\b/i,
+    /\b(?:gol|goal|reti?)\s*(\d+(?:[,.]\d+)?)/i,
+    /[:=\-]\s*(\d+(?:[,.]\d+)?)\s*$/,
+    /\s+(\d+(?:[,.]\d+)?)\s*$/
+  ];
+  for(const re of patterns){
+    const m=text.match(re);
+    if(m) return num(m[1]);
+  }
+  return null;
 }
 function cleanRiepilogoScorerName(value){
   return cleanPersonTokenForImage(String(value||'')
@@ -2427,61 +2441,126 @@ function cleanRiepilogoScorerName(value){
     .replace(/\b(?:x|×)\s*\d+(?:[,.]\d+)?\b/ig,'')
     .replace(/\b\d+(?:[,.]\d+)?\s*(?:gol|goal|reti?)\b/ig,'')
     .replace(/\b(?:gol|goal|reti?)\s*\d+(?:[,.]\d+)?\b/ig,'')
+    .replace(/[:=\-]\s*\d+(?:[,.]\d+)?\s*$/,'')
+    .replace(/\s+\d+(?:[,.]\d+)?\s*$/,'')
     .trim());
 }
-function riepilogoScorerTokensFromRow(row){
+function riepilogoSplitScorerTokens(value){
+  return String(value||'')
+    .split(/\s*(?:\n|\r|\||,|;|\+|\/|\s+-\s+)\s*/)
+    .map(x=>smartSpace(x))
+    .filter(Boolean);
+}
+function riepilogoAddScore(map,name,goals){
+  const clean=cleanRiepilogoScorerName(name);
+  const key=norm(cleanPersonTokenForTeamLookup(clean));
+  const g=Number(goals);
+  if(!clean || !key || !Number.isFinite(g) || g<=0) return false;
+  const current=map.get(key) || {name:clean, goals:0};
+  current.goals += g;
+  map.set(key,current);
+  return true;
+}
+function riepilogoGoalValueFromRow(row){
+  const keys=Object.keys(row||{});
+  const exactNames=['gol giornata','goal giornata','reti giornata','gol','goal','reti','numero gol','n gol','n. gol','n° gol','totale gol','totale goal','totale reti','gol totali','goal totali','reti totali','marcature','conteggio','totale','valore','value'];
+  for(const n of exactNames){
+    const k=keys.find(x=>norm(x)===norm(n));
+    if(k && String(row[k]||'').trim()) return row[k];
+  }
+  // Fallback controllato: accetta colonne che parlano esplicitamente di gol/reti del marcatore,
+  // ma evita gol casa/trasferta e risultato partita.
+  const k=keys.find(x=>{
+    const nk=norm(x);
+    if(nk.includes('casa') || nk.includes('trasferta') || nk.includes('ospite') || nk.includes('risultato') || nk.includes('score')) return false;
+    return (nk.includes('gol') || nk.includes('goal') || nk.includes('reti')) && (nk.includes('marcatore') || nk.includes('giocatore') || nk.includes('giornata') || nk.includes('totale'));
+  });
+  return k ? row[k] : '';
+}
+function riepilogoSourceValues(row,mode){
+  const keys=Object.keys(row||{});
   const values=[];
-  const add=(v)=>{ if(String(v||'').trim()) values.push(String(v)); };
+  const seen=new Set();
+  const add=(v)=>{
+    const text=String(v||'').trim();
+    const key=norm(text);
+    if(!text || !key || seen.has(key)) return;
+    seen.add(key); values.push(text);
+  };
   const nome=exactVal(row,['nome']);
   const cognome=exactVal(row,['cognome']);
   if(nome || cognome) add(uniqueNameParts([nome,cognome]));
-  add(firstPresent(row,[['giocatore','marcatore','calciatore','player','nome giocatore','nome completo','cognome e nome','autore','autorete']]));
-  Object.keys(row||{}).forEach(k=>{
-    const nk=norm(k);
-    if(nk==='giocatore' || nk==='marcatore' || nk==='player' || nk==='calciatore' ||
-       nk.includes('nomegiocatore') || nk.includes('nomecompleto') || nk.includes('cognomeenome') || nk.includes('marcatore')){
-      add(row[k]);
-    }
+
+  const directNames=['giocatore','marcatore','calciatore','player','nome giocatore','nome completo','cognome e nome','autore','autorete'];
+  directNames.forEach(n=>{
+    const k=keys.find(x=>norm(x)===norm(n));
+    if(k) add(row[k]);
   });
 
-  const out=[];
-  const seen=new Set();
-  values.forEach(v=>{
-    String(v||'')
-      .split(/\s*(?:\n|\r|\||,|;|\+)\s*/)
-      .map(x=>smartSpace(x))
-      .filter(Boolean)
-      .forEach(raw=>{
-        const name=cleanRiepilogoScorerName(raw);
-        const key=norm(cleanPersonTokenForTeamLookup(name));
-        if(!name || !key || seen.has(key)) return;
-        seen.add(key);
-        out.push({raw,name});
-      });
+  keys.forEach(k=>{
+    const nk=norm(k);
+    if(['sezione','giornata','turno','round','squadra','team','club','note','data','giorno','risultato','score'].includes(nk)) return;
+    if(nk.includes('squadra') || nk.includes('team') || nk.includes('giornata') || nk.includes('risultato')) return;
+
+    if(mode==='totali'){
+      // Nei CSV piatti dei riepiloghi i totali spesso sono: Sezione=Totale marcatore giornata, Statistica=Nome, Valore=Gol.
+      if(['statistica','voce','dato','etichetta','nome','giocatore','marcatore','player'].includes(nk) || nk.includes('nomegiocatore') || nk.includes('marcatore')) add(row[k]);
+    } else {
+      if(nk==='giocatore' || nk==='marcatore' || nk==='player' || nk==='calciatore' ||
+         nk.includes('nomegiocatore') || nk.includes('nomecompleto') || nk.includes('cognomeenome') ||
+         nk.includes('marcatore') || nk.includes('marcatori') || nk.includes('scorer')) add(row[k]);
+    }
   });
-  return out;
+  return values;
 }
-function riepilogoGoalValueFromRow(row){
-  return firstPresent(row,[['gol giornata','gol','reti','goal','numero gol','n gol','totale gol','goal giornata','reti giornata','totale','valore']]);
-}
-function riepilogoTopScorerFromRows(rows){
+function riepilogoScoresFromRows(rows,mode){
   const totals=new Map();
+  let explicitCount=0;
   for(const row of (rows||[])){
-    const tokens=riepilogoScorerTokensFromRow(row);
-    if(!tokens.length) continue;
+    const values=riepilogoSourceValues(row,mode);
+    if(!values.length) continue;
     const explicitGoals=riepilogoGoalNumberFromText(riepilogoGoalValueFromRow(row));
-    tokens.forEach(token=>{
-      const tokenGoals=riepilogoGoalNumberFromText(token.raw);
-      // Se una riga contiene più nomi e un totale unico, non assegna quel totale a tutti:
-      // in quel formato ogni nome vale un gol, salvo conteggio esplicito nel token (es. Rossi x2).
-      const goals=tokenGoals!==null ? tokenGoals : (tokens.length===1 && explicitGoals!==null ? explicitGoals : 1);
-      const key=norm(cleanPersonTokenForTeamLookup(token.name));
-      const current=totals.get(key) || {name:token.name, goals:0};
-      current.goals += goals;
-      totals.set(key,current);
+    if(mode==='totali' && explicitGoals===null) continue;
+
+    const rawTokens=[];
+    values.forEach(value=>riepilogoSplitScorerTokens(value).forEach(token=>rawTokens.push(token)));
+    if(!rawTokens.length) continue;
+
+    if(explicitGoals!==null && rawTokens.length===1){
+      if(riepilogoAddScore(totals,rawTokens[0],explicitGoals)) explicitCount++;
+      continue;
+    }
+
+    rawTokens.forEach(token=>{
+      const tokenGoals=riepilogoGoalNumberFromText(token);
+      const goals=tokenGoals!==null ? tokenGoals : 1;
+      if(riepilogoAddScore(totals,token,goals) && tokenGoals!==null) explicitCount++;
     });
   }
-  const scorers=[...totals.values()].filter(x=>Number.isFinite(x.goals));
+  return {totals,explicitCount};
+}
+function riepilogoScoresFromPartite(partite){
+  const totals=new Map();
+  let explicitCount=0;
+  for(const row of (partite||[])){
+    const fields=[
+      firstPresent(row,[['marcatori casa','marcatori squadra casa','gol casa marcatori','scorer casa','marcatori home']]),
+      firstPresent(row,[['marcatori trasferta','marcatori ospite','marcatori squadra trasferta','gol trasferta marcatori','scorer trasferta','marcatori away']]),
+      firstPresent(row,[['marcatori','scorers','reti']]),
+      extractInlineField(firstPresent(row,[['note','commento','descrizione']]),'Marcatori')
+    ];
+    fields.filter(Boolean).forEach(value=>{
+      riepilogoSplitScorerTokens(value).forEach(token=>{
+        const tokenGoals=riepilogoGoalNumberFromText(token);
+        const goals=tokenGoals!==null ? tokenGoals : 1;
+        if(riepilogoAddScore(totals,token,goals) && tokenGoals!==null) explicitCount++;
+      });
+    });
+  }
+  return {totals,explicitCount};
+}
+function riepilogoTopScorerLabelFromScores(scoreData){
+  const scorers=[...(scoreData?.totals||new Map()).values()].filter(x=>Number.isFinite(x.goals) && x.goals>0);
   if(!scorers.length) return '';
   const maxGoals=Math.max(...scorers.map(x=>x.goals));
   const top=scorers.filter(x=>x.goals===maxGoals);
@@ -2489,12 +2568,20 @@ function riepilogoTopScorerFromRows(rows){
   const goalText=Number.isInteger(maxGoals) ? String(maxGoals) : String(maxGoals).replace('.',',');
   return top[0].name+(goalText ? ' ('+goalText+' gol)' : '');
 }
-function riepilogoTopScorerLabel(marcatori, totaliMarcatori){
-  // Preferisce la sezione dei totali se presente, perché è già aggregata per giornata.
-  // Se non produce un risultato valido, ricade sulla sezione marcatori contando le righe/occorrenze.
-  const fromTotals=riepilogoTopScorerFromRows(totaliMarcatori||[]);
-  if(fromTotals) return fromTotals;
-  return riepilogoTopScorerFromRows(marcatori||[]);
+function riepilogoTopScorerLabel(partite, marcatori, totaliMarcatori){
+  // 1) Preferisce i totali solo se hanno un numero gol esplicito.
+  // 2) Poi usa i marcatori della giornata, contando anche nomi ripetuti nella stessa cella.
+  // 3) Infine ricade sui marcatori scritti direttamente nelle partite.
+  const sources=[
+    riepilogoScoresFromRows(totaliMarcatori||[],'totali'),
+    riepilogoScoresFromRows(marcatori||[],'marcatori'),
+    riepilogoScoresFromPartite(partite||[])
+  ];
+  for(const source of sources){
+    const label=riepilogoTopScorerLabelFromScores(source);
+    if(label) return label;
+  }
+  return '';
 }
 function deriveStats(partite, marcatori, stats, totaliMarcatori){
   const partiteGiocate=statValue(stats,['partite giocate','partite']) || partite.length;
@@ -2511,9 +2598,9 @@ function deriveStats(partite, marcatori, stats, totaliMarcatori){
     const trasferta=firstPresent(best,[['squadra trasferta','trasferta','ospite','away','squadra 2','team trasferta']]);
     maxMatch=[casa,trasferta].filter(Boolean).join(' - ')+' ('+resultText(best)+')';
   }
-  // La classifica della giornata prevale sempre sulla riga statistica precompilata:
-  // evita che venga mostrato il primo nome alfabetico quando più giocatori hanno gli stessi gol.
-  let migliorMarcatore=riepilogoTopScorerLabel(marcatori,totaliMarcatori) || statValue(stats,['miglior marcatore','top scorer']);
+  // Ricalcola il miglior marcatore dai marcatori della giornata: la riga statistica
+  // precompilata viene usata solo come fallback se non ci sono dati marcatori leggibili.
+  let migliorMarcatore=riepilogoTopScorerLabel(partite,marcatori,totaliMarcatori) || statValue(stats,['miglior marcatore','top scorer']);
   return [
     ['Partite giocate',partiteGiocate],
     ['Gol totali',golTotali],
