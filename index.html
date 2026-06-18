@@ -2861,7 +2861,7 @@ function renderRiepilogoGiornate(){
     const portiereEmptyText=(playerSearch||norm(state.search))?'':'Nessun miglior portiere indicato.';
     renderMiniSection(content,'Miglior portiere',portiere,'player',portiereEmptyText,tablePrefix+'_portiere',['sezione','giocatore','portiere','punti'],['punti']);
     renderMiniSection(content,'Autogol',autogoal,'player','',tablePrefix+'_autogol',['giocatore']);
-    if(statisticheRiepilogo.length) renderMiniSection(content,'Statistiche complete',statisticheRiepilogo,null,'',tablePrefix+'_statistiche');
+    // Sezione "Statistiche complete" nascosta dal riepilogo: i dati restano disponibili solo per i KPI in alto.
     rendered++;
   });
 
