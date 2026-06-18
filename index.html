@@ -1749,7 +1749,7 @@ function renderStatistiche(){
   if(!rows.length){
     card.appendChild(buildEl('div','empty','Per calcolare la media gol servono classifica_marcatori.csv e risultati_partite.csv, oppure una colonna Partite nel CSV marcatori.'));
   } else {
-    const hint=document.createElement('p'); hint.className='hint'; hint.textContent='Media gol per partita = gol del giocatore / partite giocate dalla sua squadra nei risultati caricati.';
+    const hint=document.createElement('p'); hint.className='hint'; hint.textContent='Media gol per partita = gol del giocatore / partite disputate.';
     card.appendChild(hint);
     const headers=['Giocatore','Media gol/partita','Squadra','Gol','Partite'];
     const body=rows.map(x=>[x.giocatore,x.media.toFixed(2).replace('.',','),x.squadra,x.gol,x.partite]);
