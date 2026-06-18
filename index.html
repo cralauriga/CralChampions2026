@@ -4,6 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CRAL Champions</title>
+  <!-- Preconnect: risparmia DNS/TLS quando Chart.js viene richiesto al volo nella Home -->
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+  <!-- Preload: il browser inizia a scaricare il file più critico (manifest) subito,
+       in parallelo col parsing dell'HTML, invece di aspettare che lo script in fondo
+       alla pagina venga eseguito ed esegua la fetch() -->
+  <link rel="preload" href="data/manifest.csv" as="fetch">
   <style>
     /* ── Tema chiaro ── */
     :root {
@@ -602,6 +608,7 @@ function imgOrInitialEl(type,name,cls){
    LOGO CRAL
    ══════════════════════════════════ */
 const HERO_LOGO_FALLBACK = document.getElementById('heroLogoWrap')?.innerHTML || '';
+let heroLogoLoaded=false;
 
 function resetHeroLogo(){
   const wrap=document.getElementById('heroLogoWrap');
@@ -633,6 +640,7 @@ function logoCandidates(){
 }
 
 function tryLoadLogo(){
+  if(heroLogoLoaded) return; // già caricato: evita di azzerarlo e riprovare inutilmente
   const wrap=document.getElementById('heroLogoWrap'); if(!wrap) return;
   const candidates=logoCandidates();
   let i=0;
@@ -642,7 +650,7 @@ function tryLoadLogo(){
     if(i>=candidates.length) return; // resta lo SVG di fallback
     const img=document.createElement('img');
     img.alt='Logo CRAL';
-    img.onload=()=>{ wrap.innerHTML=''; wrap.appendChild(img); };
+    img.onload=()=>{ wrap.innerHTML=''; wrap.appendChild(img); heroLogoLoaded=true; };
     img.onerror=()=>{ i++; tryNext(); };
     img.src=candidates[i];
   }
@@ -2849,7 +2857,7 @@ document.getElementById('search').addEventListener('input',e=>{
 });
 
 /* ── Avvio ── */
-initTheme(); renderTabs(); updateTitle(); loadAuto();
+initTheme(); renderTabs(); updateTitle(); tryLoadLogo(); loadAuto();
 </script>
 </body>
 </html>
