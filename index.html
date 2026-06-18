@@ -241,6 +241,7 @@
     </div>
     <div class="toolbar">
       <button class="btn secondary" onclick="window.print()">🖨 Stampa / PDF</button>
+      <button class="btn icon-btn" id="btnRefresh" title="Ricarica dati aggiornati" aria-label="Ricarica dati aggiornati" onclick="loadAuto(true)">🔄</button>
       <button class="btn icon-btn" id="btnTheme" title="Cambia tema" aria-label="Cambia tema chiaro/scuro">🌙</button>
       <span class="status" id="status">Avvio...</span>
     </div>
@@ -2567,19 +2568,24 @@ function renderAll(){ updateTitle(); renderTabs(); renderActiveSection(); }
 /* ══════════════════════════════════
    CARICAMENTO FILE
    ══════════════════════════════════ */
-async function fetchText(path){
-  try{ const r=await fetch('data/'+path+'?t='+Date.now()); if(r.ok) return await r.text(); }catch(e){}
-  const r2=await fetch(path+'?t='+Date.now());
+/* fresh=true forza un bypass della cache del browser/CDN (usato solo dal pulsante
+   "Aggiorna dati"). Nei caricamenti normali NON aggiungiamo alcun cache-buster:
+   così il browser e la CDN di GitHub Pages possono servire i CSV dalla cache,
+   invece di riscaricare tutto a ogni visita. */
+async function fetchText(path,fresh){
+  const bust=fresh?('?t='+Date.now()):'';
+  try{ const r=await fetch('data/'+path+bust); if(r.ok) return await r.text(); }catch(e){}
+  const r2=await fetch(path+bust);
   if(!r2.ok) throw new Error(path);
   return await r2.text();
 }
 
-async function loadAuto(){
+async function loadAuto(fresh){
   setStatus('Caricamento in corso…');
   state.files={}; state.rows={}; loadErrors=[]; state.imagesReady=true;
   let list=[...DEFAULT_FILES];
   try{
-    const mt=await fetchText('manifest.csv');
+    const mt=await fetchText('manifest.csv',fresh);
     const mr=parseCsv(mt);
     const objs=rowsToObjects(mr);
     const files=objs.length?objs.map(o=>col(o,['file','nome','filename'])).filter(Boolean):mr.flat().filter(x=>x&&x.toLowerCase()!=='file');
@@ -2587,16 +2593,22 @@ async function loadAuto(){
     state.rows['manifest.csv']=mr; state.files['manifest.csv']=mt;
   }catch(e){}
 
+  /* Tutti i CSV vengono richiesti in parallelo (Promise.allSettled) invece che
+     uno alla volta: con ~15-20 file, in sequenza si accumulava la latenza di
+     ogni singola richiesta una dopo l'altra. */
+  const csvList=list.filter(x=>/\.csv$/i.test(x) && !state.rows[x]);
+  const results=await Promise.allSettled(csvList.map(f=>fetchText(f,fresh).then(txt=>({f,txt}))));
   let ok=0;
-  for(const f of list.filter(x=>/\.csv$/i.test(x))){
-    if(state.rows[f]) continue;
-    try{ const txt=await fetchText(f); state.files[f]=txt; state.rows[f]=parseCsv(txt); ok++; }
-    catch(e){
+  results.forEach((res,i)=>{
+    const f=csvList[i];
+    if(res.status==='fulfilled'){
+      state.files[f]=res.value.txt; state.rows[f]=parseCsv(res.value.txt); ok++;
+    }else{
       // I file di riepilogo possono essere già presenti nel manifest anche se
       // non esistono ancora perché il torneo è in corso: non mostrarli come alert.
       if(!DEFAULT_FILES.includes(f) && fileKind(f)!=='riepilogo') loadErrors.push(f+' — non trovato');
     }
-  }
+  });
   /* Se nel frattempo l'utente ha già caricato manualmente una cartella (es. ha cliccato
      "Seleziona cartella" prima che l'autoload finisse), questo risultato è superato:
      non sovrascrivere i dati più recenti già mostrati. */
