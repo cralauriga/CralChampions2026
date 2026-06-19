@@ -1901,11 +1901,27 @@ function drawBarChart(canvasId,labels,values,label,type,title){
 /* ══════════════════════════════════
    RENDER SEZIONI
    ══════════════════════════════════ */
+function teamNameFromStandings(name){
+  // Nel tab Squadre il nome deve essere identico a quello mostrato in
+  // Classifiche > Classifica Squadre. Il file squadra può chiamarsi, per esempio,
+  // squadra_FCStealthyDribblers.csv, mentre in classifica il nome corretto può essere
+  // "FC Stealthy Dribblers": usiamo la classifica come fonte ufficiale del display.
+  const key=norm(name);
+  if(!key) return '';
+  for(const f of sectionFiles('classifica_squadre')){
+    for(const r of rowsToObjects(state.rows[f]||[])){
+      const candidate=firstPresent(r,[['squadra','team','nome','club']]) || Object.values(r||{})[0] || '';
+      if(candidate && norm(candidate)===key) return teamDisplayNameForChart(candidate);
+    }
+  }
+  return teamDisplayNameForChart(name);
+}
+
 function teamNameFromFile(f){
-  // Deriva il nome dal file squadra senza spezzare le maiuscole interne.
-  // Rimuove solo prefisso/estensione tecnici; non trasforma BlackJack in Black Jack.
+  // Deriva una chiave dal nome del CSV squadra e poi la converte nel nome ufficiale
+  // presente nella Classifica Squadre.
   const base=String(f||'').split('/').pop().replace(/\.csv$/i,'').replace(/^squadra[_\s-]*/i,'');
-  return teamDisplayNameForChart(base.replace(/_/g,' '));
+  return teamNameFromStandings(base.replace(/_/g,' '));
 }
 
 /* Lettura più precisa delle colonne giocatore.
