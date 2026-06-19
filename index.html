@@ -2550,7 +2550,7 @@ function openPlayerProfile(name,contextRow){
   const stats=document.createElement('div'); stats.className='player-profile-stats';
   if(!data.isKeeper || data.goals.total>0) stats.appendChild(profileStatTile('Gol segnati',formatProfileNumber(data.goals.total),data.goals.entries.length ? data.goals.entries.length+' giornate registrate' : 'Totale classifica',true));
   if(data.isKeeper){
-    stats.appendChild(profileStatTile('Punti portiere',formatProfileNumber(data.keeper.total),'',true));
+    stats.appendChild(profileStatTile('Punti Miglior portiere',formatProfileNumber(data.keeper.total),'',true));
     stats.appendChild(profileStatTile('Gol subiti squadra',data.conceded===null?'—':formatProfileNumber(data.conceded),data.team||'Squadra non indicata',false));
   } else {
     stats.appendChild(profileStatTile('Punti MVP',formatProfileNumber(data.mvp.total),data.mvp.entries.length ? data.mvp.entries.length+' giornate MVP' : 'Totale classifica',false));
