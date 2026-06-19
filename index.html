@@ -558,7 +558,15 @@ function parseCsv(text){
   const maxCols=Math.max(0,...filtered.map(r=>r.length));
   return filtered.map(r=>{ while(r.length<maxCols) r.push(''); return r; });
 }
-function rowsToObjects(rows){ if(!rows||!rows.length) return []; const h=rows[0].map(x=>String(x||'').trim()); return rows.slice(1).map(r=>Object.fromEntries(h.map((k,i)=>[k,r[i]??'']))); }
+const _rowsToObjectsCache = new WeakMap();
+function rowsToObjects(rows){
+  if(!rows||!rows.length) return [];
+  if(_rowsToObjectsCache.has(rows)) return _rowsToObjectsCache.get(rows);
+  const h=rows[0].map(x=>String(x||'').trim());
+  const out=rows.slice(1).map(r=>Object.fromEntries(h.map((k,i)=>[k,r[i]??''])));
+  _rowsToObjectsCache.set(rows,out);
+  return out;
+}
 function col(obj,names){ const keys=Object.keys(obj||{}); for(const n of names){ const nk=norm(n); const k=keys.find(x=>norm(x)===nk||norm(x).includes(nk)); if(k) return obj[k]; } return ''; }
 function num(x){ const n=parseFloat(String(x||'0').replace(',','.').replace(/[^0-9.-]/g,'')); return Number.isFinite(n)?n:0; }
 
@@ -1358,7 +1366,6 @@ function buildTable(rows, tableId, imgType, priorityNames, highlightName){
   const tbody=document.createElement('tbody');
   sortedBody.forEach(row=>{
     const tr=document.createElement('tr');
-    const rowObj=Object.fromEntries(headers.map((h,idx)=>[h,row[idx]??'']));
     headers.forEach((_,i)=>{
       const td=document.createElement('td');
       td.dataset.colRole=columnRoles[i];
@@ -1374,7 +1381,7 @@ function buildTable(rows, tableId, imgType, priorityNames, highlightName){
         if(imgType==='player'){
           labelEl.type='button';
           labelEl.className='player-link player-link-inline';
-          labelEl.onclick=(ev)=>{ ev.stopPropagation(); openPlayerProfile(name,rowObj); };
+          labelEl.onclick=(ev)=>{ ev.stopPropagation(); openPlayerProfile(name); };
           labelEl.title='Apri scheda giocatore';
         }
         labelEl.textContent=name;
@@ -2296,6 +2303,45 @@ function isCaptainPlayer(obj){
 }
 
 
+/* Cache dati derivati: evita di ricostruire rose, mappe e riepiloghi a ogni apertura scheda. */
+let _rosterIdentityCache = null;
+const _rosterMatchesCache = new Map();
+const _identityKeysCache = new Map();
+const _playerTeamMapCache = { value:null };
+const _playerRoleMapCache = { value:null };
+const _parsedRiepilogoCache = new Map();
+const _profileDataCache = new Map();
+function clearDerivedDataCaches(){
+  _rosterIdentityCache = null;
+  _rosterMatchesCache.clear();
+  _identityKeysCache.clear();
+  _playerTeamMapCache.value = null;
+  _playerRoleMapCache.value = null;
+  _parsedRiepilogoCache.clear();
+  _profileDataCache.clear();
+}
+function stableRowKey(row){
+  if(!row) return '';
+  return [playerFullName(row), playerDisplayName(row), teamHintFromRow(row), fieldLoose(row,['ruolo','role','posizione','position'])]
+    .map(x=>norm(x)).join('|');
+}
+function profileCacheKey(name,contextRow){
+  return norm(name)+'::'+stableRowKey(contextRow);
+}
+
+function warmPlayerProfileCaches(){
+  const run=()=>{
+    try{
+      rosterIdentityRecords();
+      playerTeamMap();
+      playerRoleMap();
+      sectionFiles('riepilogo').forEach(f=>parseRiepilogoFile(f));
+    }catch(e){ /* cache warm-up non critica */ }
+  };
+  if('requestIdleCallback' in window) requestIdleCallback(run,{timeout:1400});
+  else setTimeout(run,80);
+}
+
 /* Identità giocatore: matching stretto per evitare interferenze tra omonimi.
    I dati del dettaglio giocatore devono agganciarsi al giocatore completo
    (Nome+Cognome e, quando disponibile, squadra/record rosa), non a un solo cognome. */
@@ -2334,16 +2380,23 @@ function personIdentityValuesFromRow(row){
   return out;
 }
 function rosterIdentityRecords(){
+  if(_rosterIdentityCache) return _rosterIdentityCache;
   const records=[];
   const seen=new Set();
   for(const f of sectionFiles('squadra')){
     const team=teamNameFromFile(f);
     for(const row of rowsToObjects(state.rows[f]||[])){
       const aliases=[];
+      const aliasKeys=new Set();
+      const aliasWords=[];
       const add=value=>{
         const clean=cleanPersonTokenForTeamLookup(value);
         const key=personMatchKey(clean);
-        if(clean && key && !aliases.some(x=>personMatchKey(x)===key)) aliases.push(clean);
+        if(clean && key && !aliasKeys.has(key)){
+          aliasKeys.add(key);
+          aliases.push(clean);
+          aliasWords.push(personMatchWords(clean));
+        }
       };
       playerImageNames(row).forEach(add);
       add(playerFullName(row));
@@ -2351,12 +2404,14 @@ function rosterIdentityRecords(){
       personIdentityValuesFromRow(row).forEach(add);
       const primary=personMatchKey(playerFullName(row)) || personMatchKey(playerDisplayName(row)) || personMatchKey(aliases[0]);
       if(!primary) continue;
-      const identityKey=norm(team)+'|'+primary;
+      const teamKey=teamMatchKey(team);
+      const identityKey=teamKey+'|'+primary;
       if(seen.has(identityKey)) continue;
       seen.add(identityKey);
-      records.push({row,team,aliases,identityKey});
+      records.push({row,team,teamKey,aliases,aliasKeys,aliasWords,identityKey});
     }
   }
+  _rosterIdentityCache=records;
   return records;
 }
 function teamMatchKey(value){
@@ -2384,20 +2439,24 @@ function rosterMatchesForPersonToken(value, teamHint){
   const key=personMatchKey(value);
   const words=personMatchWords(value);
   if(!key || !words.length) return [];
-  const matches=rosterIdentityRecords().filter(rec=>rec.aliases.some(alias=>{
-    const aliasKey=personMatchKey(alias);
-    const aliasWords=personMatchWords(alias);
+  const teamKey=teamMatchKey(teamHint);
+  const cacheKey=key+'|'+words.join(',')+'|'+teamKey;
+  if(_rosterMatchesCache.has(cacheKey)) return _rosterMatchesCache.get(cacheKey);
+  const matches=rosterIdentityRecords().filter(rec=>rec.aliases.some((alias,idx)=>{
+    const aliasKey=rec.aliasKeys && rec.aliasKeys.has(key) ? key : personMatchKey(alias);
+    const aliasWords=(rec.aliasWords && rec.aliasWords[idx]) || personMatchWords(alias);
     if(aliasKey===key) return true; // nome+cognome esatto, anche invertito se alias presente
     if(words.length>=2 && (personWordsSubset(words,aliasWords) || personWordsSubset(aliasWords,words))) return true;
     if(words.length===1 && aliasWords.includes(words[0])) return true;
     return false;
   }));
-  const teamKey=teamMatchKey(teamHint);
+  let out=matches;
   if(teamKey){
-    const teamMatches=matches.filter(rec=>teamMatchKey(rec.team)===teamKey);
-    if(teamMatches.length) return teamMatches;
+    const teamMatches=matches.filter(rec=>rec.teamKey===teamKey);
+    if(teamMatches.length) out=teamMatches;
   }
-  return matches;
+  _rosterMatchesCache.set(cacheKey,out);
+  return out;
 }
 function uniqueRosterRecordForPersonToken(value, teamHint){
   const unique=uniqueRosterRecords(rosterMatchesForPersonToken(value,teamHint));
@@ -2434,11 +2493,14 @@ function personTokensReferToSamePlayer(a,b,teamA,teamB){
   return sameText;
 }
 function identityKeysForPlayerTokens(tokens, teamHint){
+  const cacheKey=(tokens||[]).map(personMatchKey).filter(Boolean).join('|')+'::'+teamMatchKey(teamHint);
+  if(_identityKeysCache.has(cacheKey)) return _identityKeysCache.get(cacheKey);
   const keys=new Set();
   (tokens||[]).forEach(token=>{
     const rec=uniqueRosterRecordForPersonToken(token,teamHint);
     if(rec) keys.add(rec.identityKey);
   });
+  _identityKeysCache.set(cacheKey,keys);
   return keys;
 }
 function playerProfileNameCandidates(name, contextRow){
@@ -2450,10 +2512,14 @@ function playerProfileNameCandidates(name, contextRow){
   };
   add(name);
   if(contextRow) playerImageNames(contextRow).forEach(add);
-  for(const f of sectionFiles('squadra')){
-    for(const r of rowsToObjects(state.rows[f])){
-      if(matchPersonTokenToRow(name,r,teamHint)) playerImageNames(r).forEach(add);
-    }
+  const direct=uniqueRosterRecordForPersonToken(name,teamHint);
+  if(direct){
+    playerImageNames(direct.row).forEach(add);
+    return out;
+  }
+  // Fallback raro: solo se il token non identifica univocamente un record rosa.
+  for(const rec of rosterIdentityRecords()){
+    if(matchPersonTokenToRow(name,rec.row,teamHint)) playerImageNames(rec.row).forEach(add);
   }
   return out;
 }
@@ -2528,8 +2594,12 @@ function profileScoreForCandidate(scoreData,name,candidates,teamHint){
     if(!itemKey) continue;
     // Match nome+cognome; se ci sono più omonimi, usa la squadra associata
     // al giocatore e/o alla riga del riepilogo per scegliere quello corretto.
-    const samePlayer=tokens.some(token=>personTokensReferToSamePlayer(token,item.name,teamHint,item.teamHint));
-    if(samePlayer){
+    const exactSafe=tokens.some(token=>
+      personMatchKey(token)===itemKey &&
+      personTokenIsSafeExact(token,teamHint) &&
+      personTokenIsSafeExact(item.name,item.teamHint)
+    );
+    if(exactSafe || tokens.some(token=>personTokensReferToSamePlayer(token,item.name,teamHint,item.teamHint))){
       return Number(item.goals||0);
     }
   }
@@ -2616,6 +2686,8 @@ function isGoalkeeperProfile(base,keeperData){
   return (keeperData.entries.length>0 || keeperData.total>0) && !base.role;
 }
 function buildPlayerProfileData(name,contextRow){
+  const cacheKey=profileCacheKey(name,contextRow);
+  if(_profileDataCache.has(cacheKey)) return _profileDataCache.get(cacheKey);
   const record=findSquadPlayerRecord(name,contextRow);
   const baseName=record ? playerDisplayName(record.row) : smartSpace(cleanPersonTokenForImage(name));
   const fullName=record ? playerFullName(record.row) : baseName;
@@ -2628,7 +2700,9 @@ function buildPlayerProfileData(name,contextRow){
   const base={name:baseName||fullName||name,fullName,team,role,record,candidates,imageNames:record?playerImageNames(record.row):[fullName||name,name].filter(Boolean)};
   const isKeeper=isGoalkeeperProfile(base,keeper);
   const conceded=isKeeper ? teamGoalsConceded(team) : null;
-  return {...base,isKeeper,goals,mvp,keeper,conceded};
+  const data={...base,isKeeper,goals,mvp,keeper,conceded};
+  _profileDataCache.set(cacheKey,data);
+  return data;
 }
 function formatProfileNumber(value){
   const n=Number(value||0);
@@ -3018,8 +3092,10 @@ function objectsFromHeaderRows(header, rows){
   return rows.filter(r=>r.some(x=>String(x||'').trim())).map(r=>Object.fromEntries(header.map((h,i)=>[h||('Colonna '+(i+1)),r[i]??''])));
 }
 function parseRiepilogoFile(file){
+  if(_parsedRiepilogoCache.has(file)) return _parsedRiepilogoCache.get(file);
   const raw=state.files[file]||'';
   const empty={partite:[],marcatori:[],totaliMarcatori:[],mvp:[],portiere:[],autogoal:[],statistiche:[]};
+  const finish=()=>{ _parsedRiepilogoCache.set(file,empty); return empty; };
 
   // Caso 1: CSV piatto reale generato dai tuoi file riepilogo_giornataN.csv.
   // La prima riga contiene la colonna "Sezione" e ogni riga è già classificata
@@ -3033,7 +3109,7 @@ function parseRiepilogoFile(file){
       if(s) empty[s].push(r);
       else empty.partite.push(r);
     });
-    return empty;
+    return finish();
   }
 
   // Caso 2: formato a blocchi testuali: PARTITE, MARCATORI, MVP, ecc.
@@ -3067,7 +3143,7 @@ function parseRiepilogoFile(file){
   if(!hasSections && flat.length){
     flat.forEach(r=>empty.partite.push(r));
   }
-  return empty;
+  return finish();
 }
 function rowGiornataKey(row,file){
   const g=firstPresent(row,[['giornata','turno','round']]);
@@ -3157,6 +3233,7 @@ function cleanPersonTokenForTeamLookup(name){
     .replace(/\b(?:gol|goal|reti?)\s*\d+\b/ig,''));
 }
 function playerTeamMap(){
+  if(_playerTeamMapCache.value) return _playerTeamMapCache.value;
   const map=new Map();
   for(const f of sectionFiles('squadra')){
     const team=teamNameFromFile(f);
@@ -3179,9 +3256,11 @@ function playerTeamMap(){
       });
     });
   });
+  _playerTeamMapCache.value=map;
   return map;
 }
 function playerRoleMap(){
+  if(_playerRoleMapCache.value) return _playerRoleMapCache.value;
   const map=new Map();
   for(const f of sectionFiles('squadra')){
     for(const r of rowsToObjects(state.rows[f])){
@@ -3194,6 +3273,7 @@ function playerRoleMap(){
       });
     }
   }
+  _playerRoleMapCache.value=map;
   return map;
 }
 function matchPersonTokenToRow(name,row,teamHint){
@@ -3426,20 +3506,18 @@ function riepilogoSplitScorerTokens(value){
     .map(x=>smartSpace(x))
     .filter(Boolean);
 }
-function riepilogoAddScore(map,name,goals,teamHint){
+function riepilogoAddScore(map,name,goals){
   const clean=cleanRiepilogoScorerName(name);
   const tokenKey=personMatchKey(clean);
   const g=Number(goals);
   if(!clean || !tokenKey || !Number.isFinite(g) || g<=0) return false;
-  // Se il token identifica un giocatore della rosa, usa la sua identità.
-  // Se il nome+cognome è presente in più squadre, la squadra associata alla riga
-  // disambigua; senza squadra resta un token non assegnabile a una scheda specifica.
-  const rec=uniqueRosterRecordForPersonToken(clean,teamHint);
-  const teamKey=teamMatchKey(teamHint);
-  const key=rec ? ('player:'+rec.identityKey) : ('token:'+tokenKey+(teamKey?'|team:'+teamKey:''));
-  const current=map.get(key) || {name:clean, goals:0, identityKey:rec?.identityKey||'', teamHint:teamHint||''};
+  // Se il token identifica in modo univoco un giocatore della rosa, usa la sua identità.
+  // Se invece è ambiguo (es. solo cognome condiviso), resta come token non assegnabile
+  // a una scheda specifica: così non somma gol a omonimi.
+  const rec=uniqueRosterRecordForPersonToken(clean);
+  const key=rec ? ('player:'+rec.identityKey) : ('token:'+tokenKey);
+  const current=map.get(key) || {name:clean, goals:0, identityKey:rec?.identityKey||''};
   current.goals += g;
-  if(teamHint && !current.teamHint) current.teamHint=teamHint;
   map.set(key,current);
   return true;
 }
@@ -3508,16 +3586,15 @@ function riepilogoScoresFromRows(rows,mode){
     values.forEach(value=>riepilogoSplitScorerTokens(value).forEach(token=>rawTokens.push(token)));
     if(!rawTokens.length) continue;
 
-    const teamHint=teamHintFromRow(row);
     if(explicitGoals!==null && rawTokens.length===1){
-      if(riepilogoAddScore(totals,rawTokens[0],explicitGoals,teamHint)) explicitCount++;
+      if(riepilogoAddScore(totals,rawTokens[0],explicitGoals)) explicitCount++;
       continue;
     }
 
     rawTokens.forEach(token=>{
       const tokenGoals=riepilogoGoalNumberFromText(token);
       const goals=tokenGoals!==null ? tokenGoals : 1;
-      if(riepilogoAddScore(totals,token,goals,teamHint) && tokenGoals!==null) explicitCount++;
+      if(riepilogoAddScore(totals,token,goals) && tokenGoals!==null) explicitCount++;
     });
   }
   return {totals,explicitCount};
@@ -3526,19 +3603,17 @@ function riepilogoScoresFromPartite(partite){
   const totals=new Map();
   let explicitCount=0;
   for(const row of (partite||[])){
-    const homeTeam=firstPresent(row,[['squadra casa','casa','home','squadra 1','team casa']]);
-    const awayTeam=firstPresent(row,[['squadra trasferta','squadra ospite','trasferta','ospite','away','squadra 2','team trasferta','team ospite']]);
     const fields=[
-      {value:firstPresent(row,[['marcatori casa','marcatori squadra casa','gol casa marcatori','scorer casa','marcatori home']]),team:homeTeam},
-      {value:firstPresent(row,[['marcatori trasferta','marcatori ospite','marcatori squadra trasferta','gol trasferta marcatori','scorer trasferta','marcatori away']]),team:awayTeam},
-      {value:firstPresent(row,[['marcatori','scorers','reti']]),team:teamHintFromRow(row)},
-      {value:extractInlineField(firstPresent(row,[['note','commento','descrizione']]),'Marcatori'),team:teamHintFromRow(row)}
+      firstPresent(row,[['marcatori casa','marcatori squadra casa','gol casa marcatori','scorer casa','marcatori home']]),
+      firstPresent(row,[['marcatori trasferta','marcatori ospite','marcatori squadra trasferta','gol trasferta marcatori','scorer trasferta','marcatori away']]),
+      firstPresent(row,[['marcatori','scorers','reti']]),
+      extractInlineField(firstPresent(row,[['note','commento','descrizione']]),'Marcatori')
     ];
-    fields.filter(x=>String(x.value||'').trim()).forEach(field=>{
-      riepilogoSplitScorerTokens(field.value).forEach(token=>{
+    fields.filter(Boolean).forEach(value=>{
+      riepilogoSplitScorerTokens(value).forEach(token=>{
         const tokenGoals=riepilogoGoalNumberFromText(token);
         const goals=tokenGoals!==null ? tokenGoals : 1;
-        if(riepilogoAddScore(totals,token,goals,field.team) && tokenGoals!==null) explicitCount++;
+        if(riepilogoAddScore(totals,token,goals) && tokenGoals!==null) explicitCount++;
       });
     });
   }
@@ -3942,6 +4017,7 @@ async function loadAuto(fresh){
   setStatus('Caricamento in corso…');
   state.files={}; state.rows={}; loadErrors=[]; state.imagesReady=true;
   clearImageProbeCache();
+  clearDerivedDataCaches();
   invalidateHeroLogo();
 
   // Avvia SUBITO i CSV base noti nel codice, incluso manifest.csv.
@@ -3991,7 +4067,7 @@ async function loadAuto(fresh){
      "Seleziona cartella" prima che l'autoload finisse), questo risultato è superato:
      non sovrascrivere i dati più recenti già mostrati. */
   if(manualLoadActive) return;
-  applyConfig(); showErrors(); renderAll(); tryLoadLogo();
+  applyConfig(); showErrors(); renderAll(); tryLoadLogo(); warmPlayerProfileCaches();
   if(ok || state.rows['manifest.csv']) setStatus(dataLoadStatus(ok+(state.rows['manifest.csv']?1:0)),true);
   else setStatus('Autocaricamento bloccato — usa Seleziona cartella');
 }
@@ -4063,11 +4139,13 @@ async function ingestPickedFile(file, relPath, basename){
   // Se esistono duplicati con stesso nome in sottocartelle diverse, l'ultimo letto vince.
   state.files[name]=txt;
   state.rows[name]=parseCsv(txt);
+  clearDerivedDataCaches();
   state._csvCount=(state._csvCount||0)+1;
   return true;
 }
 
 function refreshAfterManualLoad(csv,img){
+  clearDerivedDataCaches();
   applyConfig();
   showErrors();
 
@@ -4080,6 +4158,7 @@ function refreshAfterManualLoad(csv,img){
   renderActiveSection();
 
   tryLoadLogo();
+  warmPlayerProfileCaches();
   if(csv>0) setStatus(dataLoadStatus(csv),true);
   else setStatus(`Nessun CSV trovato nella cartella selezionata (${img} immagini). Seleziona la cartella principale del torneo o la cartella che contiene i CSV.`);
 
@@ -4103,6 +4182,7 @@ async function loadFromDirectoryHandle(dir){
   manualLoadActive = true;
   state.files={}; state.rows={}; state.imageURLs={}; state.imageAliases={}; loadErrors=[]; state.imagesReady=false;
   clearImageProbeCache();
+  clearDerivedDataCaches();
   invalidateHeroLogo();
   state._csvCount=0; state._imgCount=0;
   setStatus('Caricamento cartella…');
@@ -4170,6 +4250,7 @@ async function loadFolder(fileList){
   const files=[...fileList]; // snapshot: l'input viene svuotato subito dopo la selezione
   state.files={}; state.rows={}; state.imageURLs={}; state.imageAliases={}; loadErrors=[]; state.imagesReady=false;
   clearImageProbeCache();
+  clearDerivedDataCaches();
   invalidateHeroLogo();
   state._csvCount=0; state._imgCount=0;
 
@@ -4203,6 +4284,7 @@ async function loadFolder(fileList){
       const txt=await safeFileText(file, rel);
       state.files[file.name]=txt;
       state.rows[file.name]=parseCsv(txt);
+      clearDerivedDataCaches();
       state._csvCount++;
     }catch(e){
       loadErrors.push(rel+' — CSV saltato: '+String((e&&e.message)||e||'errore di lettura'));
