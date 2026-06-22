@@ -245,7 +245,8 @@
       opacity:0;transition:opacity .25s}
     .motm-card::after{content:'';position:absolute;top:0;left:-60%;width:45%;height:100%;
       background:linear-gradient(75deg,transparent,rgba(255,255,255,.35),transparent);
-      transform:skewX(-18deg);animation:motmShine 2.6s ease-in-out .5s 1}
+      transform:skewX(-18deg);animation:motmShine 2.6s ease-in-out .5s 1;pointer-events:none}
+    .motm-card:hover::after{animation:motmShine .9s ease-in-out 0s 1}
     .motm-eyebrow{position:absolute;top:14px;left:20px;font-family:'Oswald',Arial,sans-serif;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);font-weight:700;display:flex;align-items:center;gap:6px}
     .motm-photo{width:96px;height:96px;border-radius:22px;flex:0 0 auto;object-fit:cover;object-position:center;
       background:rgba(255,255,255,.14);border:2px solid var(--gold);box-shadow:0 10px 26px rgba(0,0,0,.35);
@@ -3491,28 +3492,30 @@ function renderMotmCard(){
     card.style.animation='none';
     attachCardTilt(card,glare);
   },{once:true});
+  // Fallback: se animationend non scatta (browser che ottimizza via l'animazione,
+  // o prefers-reduced-motion attivo senza media query), attiviamo il tilt comunque.
+  setTimeout(()=>{
+    if(!card._tiltAttached) attachCardTilt(card,glare);
+  }, 750);
   return wrap;
 }
 function attachCardTilt(card,glare){
-  // Tilt 3D al tocco/mouse: la card ruota leggermente seguendo la posizione
-  // del dito/puntatore, come una carta fisica vista in prospettiva. Niente
-  // librerie esterne: solo transform CSS aggiornato con requestAnimationFrame
-  // per restare fluido. Disattivato per chi preferisce animazioni ridotte.
+  if(card._tiltAttached) return; card._tiltAttached=true;
   if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const MAX_DEG=9;
+  const MAX_DEG=15; // più alto = effetto più visibile, spec. su card larga e bassa
   let rafId=null;
 
   function applyTilt(clientX,clientY){
     const rect=card.getBoundingClientRect();
-    const px=(clientX-rect.left)/rect.width;  // 0..1
-    const py=(clientY-rect.top)/rect.height;  // 0..1
+    const px=(clientX-rect.left)/rect.width;
+    const py=(clientY-rect.top)/rect.height;
     const rotY=(px-0.5)*2*MAX_DEG;
     const rotX=(0.5-py)*2*MAX_DEG;
     if(rafId) cancelAnimationFrame(rafId);
     rafId=requestAnimationFrame(()=>{
-      card.style.transform=`perspective(800px) scale3d(1.015,1.015,1.015) rotateX(${rotX.toFixed(2)}deg) rotateY(${rotY.toFixed(2)}deg)`;
+      card.style.transform=`perspective(600px) scale3d(1.02,1.02,1.02) rotateX(${rotX.toFixed(2)}deg) rotateY(${rotY.toFixed(2)}deg)`;
       glare.style.opacity='1';
-      glare.style.background=`radial-gradient(circle at ${(px*100).toFixed(0)}% ${(py*100).toFixed(0)}%, rgba(255,255,255,.25), transparent 60%)`;
+      glare.style.background=`radial-gradient(circle at ${(px*100).toFixed(0)}% ${(py*100).toFixed(0)}%, rgba(255,255,255,.3), transparent 55%)`;
     });
   }
   function resetTilt(){
@@ -5156,16 +5159,30 @@ function renderRiepilogoGiornate(){
   renderRiepilogoFilter(el, files);
   const content=document.createElement('div');
   el.appendChild(content);
+
+  const sorted=files.sort((a,b)=>giornataLabelFromFile(a).localeCompare(giornataLabelFromFile(b),'it',{numeric:true}));
+
+  // Rendering progressivo: elabora subito la giornata selezionata (o l'ultima),
+  // poi le altre in chunk asincroni con setTimeout(0) così il tab si apre
+  // istantaneamente invece di bloccare il thread principale su tante giornate.
+  const selectedKey=state.selectedRiepilogoGiornata;
+  const priorityFile=selectedKey
+    ? sorted.find(f=>sectionFiles('riepilogo').some(()=>{ const p=parseRiepilogoFile(f); return (p.partite||[]).concat(p.mvp||[]).some(r=>rowGiornataKey(r,f)===selectedKey); }))
+    : sorted[sorted.length-1];
+
+  const orderedFiles=priorityFile
+    ? [priorityFile, ...sorted.filter(f=>f!==priorityFile)]
+    : sorted;
+
   let rendered=0;
 
-  files.sort((a,b)=>giornataLabelFromFile(a).localeCompare(giornataLabelFromFile(b),'it',{numeric:true})).forEach(f=>{
+  function renderOneFile(f){
     const parsed=parseRiepilogoFile(f);
     const dayPartite=parsed.partite.filter(r=>!state.selectedRiepilogoGiornata || rowGiornataKey(r,f)===state.selectedRiepilogoGiornata);
     const playerSearch=isRiepilogoPlayerSearch(parsed,f);
     const partite=playerSearch ? [] : filteredRiepilogoRows(parsed.partite,f);
     let marcatori=filteredRiepilogoRows(parsed.marcatori,f);
     const totaliMarcatori=filteredRiepilogoRows(parsed.totaliMarcatori||[],f);
-    // Una sola scheda: se mancano i marcatori dettagliati, usa i totali come fallback.
     if(!marcatori.length && totaliMarcatori.length) marcatori=totaliMarcatori;
     const mvp=filteredRiepilogoRows(parsed.mvp,f);
     const portiere=filteredRiepilogoRows(parsed.portiere,f);
@@ -5182,27 +5199,36 @@ function renderRiepilogoGiornate(){
       const card=document.createElement('div'); card.className='card riepilogo-card'; card.style.marginBottom='14px';
       const h=document.createElement('h2'); h.textContent=title; card.appendChild(h);
       renderKpiGrid(card,deriveStats(partite,marcatori,statisticheRiepilogo,totaliMarcatori));
-
       const ph=document.createElement('h3'); ph.style.cssText='margin:14px 0 0;color:var(--blue);font-size:18px;text-transform:uppercase'; ph.textContent='Partite della giornata';
       card.appendChild(ph);
       renderPartiteRiepilogo(card,partite,f,[...marcatori,...totaliMarcatori,...mvp,...portiere,...autogoal]);
-
       content.appendChild(card);
     }
     const tablePrefix='riepilogo_'+norm(f)+'_'+rowGiornataKey(allRows[0]||{},f);
     renderMiniSection(content,'Marcatori della giornata',marcatori,'player',playerSearch?'':'Nessun marcatore indicato.',tablePrefix+'_marcatori',['sezione','giocatore','marcatore','gol','goal','reti'],['gol','goal','reti']);
     renderMiniSection(content,'MVP della giornata',mvp,'player',playerSearch?'':'Nessun MVP indicato.',tablePrefix+'_mvp',['sezione','giocatore','mvp','punti'],['punti']);
-    // Durante una ricerca testuale non mostrare la scheda vuota del miglior portiere:
-    // se il giocatore filtrato non è portiere, la sezione scompare invece di mostrare
-    // "Nessun miglior portiere indicato.".
     const portiereEmptyText=(playerSearch||norm(state.search))?'':'Nessun miglior portiere indicato.';
     renderMiniSection(content,'Miglior portiere',portiere,'player',portiereEmptyText,tablePrefix+'_portiere',['sezione','giocatore','portiere','punti'],['punti']);
     renderMiniSection(content,'Autogol',autogoal,'player','',tablePrefix+'_autogol',['giocatore']);
-    // Sezione "Statistiche complete" nascosta dal riepilogo: i dati restano disponibili solo per i KPI in alto.
     rendered++;
-  });
+  }
 
-  if(!rendered) content.appendChild(buildEl('div','empty','Nessun risultato per il filtro selezionato o per la ricerca.'));
+  // Prima giornata: subito, nel frame corrente.
+  if(orderedFiles.length) renderOneFile(orderedFiles[0]);
+
+  // Giornate restanti: in chunk da 2 con setTimeout(0) per non bloccare il thread.
+  const remaining=orderedFiles.slice(1);
+  function processChunk(i){
+    if(i>=remaining.length){
+      if(!rendered) content.appendChild(buildEl('div','empty','Nessun risultato per il filtro selezionato o per la ricerca.'));
+      return;
+    }
+    renderOneFile(remaining[i]);
+    renderOneFile(remaining[i+1]); // 2 per chunk: bilancio tra velocità e fluidità
+    setTimeout(()=>processChunk(i+2),0);
+  }
+  if(remaining.length) setTimeout(()=>processChunk(0),0);
+  else if(!rendered) content.appendChild(buildEl('div','empty','Nessun risultato per il filtro selezionato o per la ricerca.'));
 }
 
 
