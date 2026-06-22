@@ -5246,7 +5246,7 @@ function renderRiepilogoGiornate(){
   const priorityFile=selectedFile || sorted[sorted.length-1];
   const renderOnlySelected=!!selectedKey;
 
-  const orderedFiles=priorityFile
+  const orderedFiles=(selectedKey && priorityFile)
     ? [priorityFile, ...sorted.filter(f=>f!==priorityFile)]
     : sorted;
 
