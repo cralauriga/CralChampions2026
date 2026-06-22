@@ -513,6 +513,7 @@ let state = {
   imagesReady: true, // false durante il caricamento manuale differito delle immagini
   search: '', activeTab: 'home',
   selectedRiepilogoGiornata: '',
+  riepilogoFilterInitialized: false,
   sortState: {}   // { tableId: { col, dir } }
 };
 let loadErrors = [];
@@ -2338,7 +2339,7 @@ function totalCalendarioGiornate(){
   return maxNumericGiornata(options) || options.length;
 }
 function latestRiepilogoGiornata(){
-  const options=riepilogoGiornateOptions(sectionFiles('riepilogo'));
+  const options=riepilogoGiornateOptions(sectionFiles('riepilogo'),{fast:true});
   return maxNumericGiornata(options) || options.length;
 }
 function homeProgressStatus(){
@@ -2621,6 +2622,7 @@ const _identityKeysCache = new Map();
 const _playerTeamMapCache = { value:null };
 const _playerRoleMapCache = { value:null };
 const _parsedRiepilogoCache = new Map();
+let _riepilogoPreloadToken = 0;
 const _profileDataCache = new Map();
 function clearDerivedDataCaches(){
   _rosterIdentityCache = null;
@@ -2629,6 +2631,7 @@ function clearDerivedDataCaches(){
   _playerTeamMapCache.value = null;
   _playerRoleMapCache.value = null;
   _parsedRiepilogoCache.clear();
+  _riepilogoPreloadToken++;
   _profileDataCache.clear();
   _teamRankMapCache = null;
   _playerRoleCache = null;
@@ -4352,22 +4355,94 @@ function rowGiornataLabel(row,file){
   if(gn) return 'Giornata '+gn;
   return giornataLabelFromFile(file);
 }
-function riepilogoGiornateOptions(files){
-  const map=new Map();
-  files.forEach(f=>{
-    const data=parseRiepilogoFile(f);
-    const all=[...data.partite,...data.marcatori,...data.totaliMarcatori,...data.mvp,...data.portiere,...data.autogoal,...data.statistiche];
-    if(!all.length){ map.set(giornataKeyFromFile(f),giornataLabelFromFile(f)); return; }
-    all.forEach(r=>{
-      const key=rowGiornataKey(r,f);
-      const label=rowGiornataLabel(r,f);
-      if(key && label && !map.has(key)) map.set(key,label);
-    });
+function addRiepilogoOptionsFromParsed(map,file){
+  const data=parseRiepilogoFile(file);
+  const all=[...data.partite,...data.marcatori,...data.totaliMarcatori,...data.mvp,...data.portiere,...data.autogoal,...data.statistiche];
+  if(!all.length){
+    const key=giornataKeyFromFile(file), label=giornataLabelFromFile(file);
+    if(key && label && !map.has(key)) map.set(key,label);
+    return;
+  }
+  all.forEach(r=>{
+    const key=rowGiornataKey(r,file);
+    const label=rowGiornataLabel(r,file);
+    if(key && label && !map.has(key)) map.set(key,label);
   });
-  return [...map.entries()].sort((a,b)=>String(a[1]).localeCompare(String(b[1]),'it',{numeric:true}));
+}
+function sortRiepilogoOptions(options){
+  return [...options].sort((a,b)=>String(a[1]).localeCompare(String(b[1]),'it',{numeric:true}));
+}
+function riepilogoGiornateOptions(files, opts={}){
+  const fast=!!opts.fast;
+  const map=new Map();
+  const toParse=[];
+  files.forEach(f=>{
+    const n=giornataNumberFromText(f);
+    if(fast && n){
+      map.set(String(parseInt(n,10)),'Giornata '+String(parseInt(n,10)));
+      return;
+    }
+    if(fast && !_parsedRiepilogoCache.has(f)){
+      // Se il file sembra un riepilogo aggregato (es. riepilogo_giornate.csv),
+      // è necessario leggerlo subito per conoscere davvero l'ultima giornata.
+      // Per i file singoli già numerati invece bastano nome file e parsing in background.
+      const nf=norm(f);
+      if(files.length===1 || nf.includes('riepilogogiornate') || nf.includes('riepilogocompleto')) toParse.push(f);
+      else {
+        const key=giornataKeyFromFile(f), label=giornataLabelFromFile(f);
+        if(key && label && !map.has(key)) map.set(key,label);
+      }
+      return;
+    }
+    toParse.push(f);
+  });
+  toParse.forEach(f=>addRiepilogoOptionsFromParsed(map,f));
+  return sortRiepilogoOptions(map.entries());
+}
+function latestRiepilogoOption(files){
+  const options=riepilogoGiornateOptions(files,{fast:true});
+  return options.length ? options[options.length-1] : null;
+}
+function ensureDefaultRiepilogoFilter(files){
+  const options=riepilogoGiornateOptions(files,{fast:true});
+  if(!options.length){ state.selectedRiepilogoGiornata=''; state.riepilogoFilterInitialized=true; return options; }
+  if(!state.riepilogoFilterInitialized){
+    // Nuovo comportamento: al primo ingresso il tab Riepilogo parte filtrato sull'ultima giornata.
+    state.selectedRiepilogoGiornata=options[options.length-1][0];
+    state.riepilogoFilterInitialized=true;
+    return options;
+  }
+  if(!state.selectedRiepilogoGiornata) return options; // "Tutte le giornate" scelto esplicitamente dall'utente.
+  if(options.some(([key])=>key===state.selectedRiepilogoGiornata)) return options;
+  // Se il valore salvato non esiste più dopo un refresh dati, torna all'ultima disponibile.
+  state.selectedRiepilogoGiornata=options[options.length-1][0];
+  return options;
+}
+function riepilogoFileHasGiornata(file,key){
+  if(!key) return true;
+  const n=giornataNumberFromText(file);
+  if(n && String(parseInt(n,10))===String(key)) return true;
+  const parsed=parseRiepilogoFile(file);
+  const all=[...parsed.partite,...parsed.marcatori,...parsed.totaliMarcatori,...parsed.mvp,...parsed.portiere,...parsed.autogoal,...parsed.statistiche];
+  if(!all.length) return giornataKeyFromFile(file)===key;
+  return all.some(r=>rowGiornataKey(r,file)===key);
+}
+function scheduleRiepilogoBackgroundPreload(files, selectedKey){
+  const token=++_riepilogoPreloadToken;
+  // Non usare controlli che parsano i file dentro il sort: il preload deve davvero
+  // procedere in background, a chunk, dopo il rendering della giornata visibile.
+  const ordered=[...files].sort((a,b)=>giornataLabelFromFile(a).localeCompare(giornataLabelFromFile(b),'it',{numeric:true}));
+  const remaining=ordered.filter(f=>!_parsedRiepilogoCache.has(f));
+  function process(i){
+    if(token!==_riepilogoPreloadToken || i>=remaining.length) return;
+    if(remaining[i]) parseRiepilogoFile(remaining[i]);
+    if(remaining[i+1]) parseRiepilogoFile(remaining[i+1]);
+    setTimeout(()=>process(i+2),0);
+  }
+  if(remaining.length) setTimeout(()=>process(0),0);
 }
 function renderRiepilogoFilter(parent, files){
-  const options=riepilogoGiornateOptions(files);
+  const options=ensureDefaultRiepilogoFilter(files);
   const bar=document.createElement('div');
   bar.className='card';
   bar.style.cssText='margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap';
@@ -4392,8 +4467,9 @@ function renderRiepilogoFilter(parent, files){
     sel.value=state.selectedRiepilogoGiornata;
   } else {
     state.selectedRiepilogoGiornata='';
+    sel.value='';
   }
-  sel.onchange=()=>{ state.selectedRiepilogoGiornata=sel.value; renderRiepilogoGiornate(); };
+  sel.onchange=()=>{ state.riepilogoFilterInitialized=true; state.selectedRiepilogoGiornata=sel.value; renderRiepilogoGiornate(); };
   bar.appendChild(sel);
 
   const info=document.createElement('span');
@@ -5160,15 +5236,15 @@ function renderRiepilogoGiornate(){
   const content=document.createElement('div');
   el.appendChild(content);
 
-  const sorted=files.sort((a,b)=>giornataLabelFromFile(a).localeCompare(giornataLabelFromFile(b),'it',{numeric:true}));
+  const sorted=[...files].sort((a,b)=>giornataLabelFromFile(a).localeCompare(giornataLabelFromFile(b),'it',{numeric:true}));
 
-  // Rendering progressivo: elabora subito la giornata selezionata (o l'ultima),
-  // poi le altre in chunk asincroni con setTimeout(0) così il tab si apre
-  // istantaneamente invece di bloccare il thread principale su tante giornate.
+  // Nuovo flusso: il filtro viene inizializzato sull'ultima giornata. In quel caso
+  // renderizziamo subito SOLO quella giornata; il resto viene solo preriscaldato in
+  // background, così lo switch su altre giornate o su "Tutte" riusa cache già pronte.
   const selectedKey=state.selectedRiepilogoGiornata;
-  const priorityFile=selectedKey
-    ? sorted.find(f=>sectionFiles('riepilogo').some(()=>{ const p=parseRiepilogoFile(f); return (p.partite||[]).concat(p.mvp||[]).some(r=>rowGiornataKey(r,f)===selectedKey); }))
-    : sorted[sorted.length-1];
+  const selectedFile=selectedKey ? sorted.find(f=>riepilogoFileHasGiornata(f,selectedKey)) : null;
+  const priorityFile=selectedFile || sorted[sorted.length-1];
+  const renderOnlySelected=!!selectedKey;
 
   const orderedFiles=priorityFile
     ? [priorityFile, ...sorted.filter(f=>f!==priorityFile)]
@@ -5213,10 +5289,17 @@ function renderRiepilogoGiornate(){
     rendered++;
   }
 
-  // Prima giornata: subito, nel frame corrente.
+  // Frame corrente: solo la giornata filtrata, che di default è l'ultima.
   if(orderedFiles.length) renderOneFile(orderedFiles[0]);
 
-  // Giornate restanti: in chunk da 2 con setTimeout(0) per non bloccare il thread.
+  if(renderOnlySelected){
+    if(!rendered) content.appendChild(buildEl('div','empty','Nessun risultato per il filtro selezionato o per la ricerca.'));
+    scheduleRiepilogoBackgroundPreload(sorted,selectedKey);
+    return;
+  }
+
+  // Solo quando l'utente seleziona "Tutte le giornate" renderizziamo anche il resto,
+  // sempre in chunk da 2 con setTimeout(0) per mantenere fluida l'interfaccia.
   const remaining=orderedFiles.slice(1);
   function processChunk(i){
     if(i>=remaining.length){
@@ -5224,12 +5307,13 @@ function renderRiepilogoGiornate(){
       return;
     }
     renderOneFile(remaining[i]);
-    renderOneFile(remaining[i+1]); // 2 per chunk: bilancio tra velocità e fluidità
+    renderOneFile(remaining[i+1]);
     setTimeout(()=>processChunk(i+2),0);
   }
   if(remaining.length) setTimeout(()=>processChunk(0),0);
   else if(!rendered) content.appendChild(buildEl('div','empty','Nessun risultato per il filtro selezionato o per la ricerca.'));
 }
+
 
 
 function renderMatchSection(sectionId, kind){
@@ -5320,6 +5404,7 @@ async function fetchText(path,fresh){
 async function loadAuto(fresh){
   setStatus('Caricamento in corso…');
   state.files={}; state.rows={}; loadErrors=[]; state.imagesReady=true;
+  state.selectedRiepilogoGiornata=''; state.riepilogoFilterInitialized=false;
   clearImageProbeCache();
   clearDerivedDataCaches();
   invalidateHeroLogo();
@@ -5485,6 +5570,7 @@ function refreshAfterManualLoad(csv,img){
 async function loadFromDirectoryHandle(dir){
   manualLoadActive = true;
   state.files={}; state.rows={}; state.imageURLs={}; state.imageAliases={}; loadErrors=[]; state.imagesReady=false;
+  state.selectedRiepilogoGiornata=''; state.riepilogoFilterInitialized=false;
   clearImageProbeCache();
   clearDerivedDataCaches();
   invalidateHeroLogo();
@@ -5553,6 +5639,7 @@ async function loadFolder(fileList){
   manualLoadActive = true;
   const files=[...fileList]; // snapshot: l'input viene svuotato subito dopo la selezione
   state.files={}; state.rows={}; state.imageURLs={}; state.imageAliases={}; loadErrors=[]; state.imagesReady=false;
+  state.selectedRiepilogoGiornata=''; state.riepilogoFilterInitialized=false;
   clearImageProbeCache();
   clearDerivedDataCaches();
   invalidateHeroLogo();
