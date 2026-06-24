@@ -589,6 +589,8 @@
     .riepilogo-match .match-vs{font-size:13px;text-transform:uppercase;letter-spacing:.04em}
     .riepilogo-match .score{font-size:30px;line-height:1;font-variant-numeric:tabular-nums;padding-top:4px;min-width:88px;text-align:right}
     .riepilogo-match .small{font-size:12px;line-height:1.35}
+    .riepilogo-player-label{cursor:default;color:inherit;font:inherit;font-weight:inherit;text-decoration:none}
+    .riepilogo-player-label:hover,.riepilogo-player-label:focus{color:inherit;text-decoration:none}
     /* ── Grafici ── */
     .chart-card{position:relative;overflow:hidden;border-radius:22px;background:linear-gradient(145deg,var(--panel),rgba(15,90,168,.06));}
     .chart-card::before{content:'';position:absolute;inset:-90px -70px auto auto;width:210px;height:210px;border-radius:50%;background:radial-gradient(circle,rgba(15,90,168,.16),transparent 68%);pointer-events:none}
@@ -5133,8 +5135,9 @@ function addPeopleLineSmart(parent,label,people,withImages,teamHint,contextRows,
         pill.appendChild(roleFallbackElForPerson(name,contextRows));
       }
     }
-    const t=document.createElement('button'); t.type='button'; t.className='player-link'; t.textContent=name; t.title='Apri scheda giocatore';
-    t.onclick=(ev)=>{ ev.stopPropagation(); openPlayerProfile(name); };
+    const t=document.createElement('span');
+    t.className='riepilogo-player-label';
+    t.textContent=name;
     pill.appendChild(t); list.appendChild(pill);
   });
   row.appendChild(list); parent.appendChild(row);
