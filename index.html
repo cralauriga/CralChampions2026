@@ -2500,15 +2500,20 @@ function playerImageNames(obj){
 function allPlayersFromTeams(){ const out=[]; for(const f of sectionFiles('squadra')){ const sq=teamNameFromFile(f); for(const r of rowsToObjects(state.rows[f])){ const n=playerFullName(r); if(n) out.push({nome:n,squadra:sq,ruolo:col(r,['ruolo','role']),numero:col(r,['numero','n'])}); } } return out; }
 function scorers(){ const f=sectionFiles('marcatori')[0]; return f?rowsToObjects(state.rows[f]):[]; }
 function matchRows(){ return sectionFiles('risultati').flatMap(f=>rowsToObjects(state.rows[f])); }
+function playedMatchesCount(){
+  const direct=matchRows();
+  if(direct.length) return direct.filter(matchHasRealResult).length;
+  return [...riepilogoRoundProgressMap(sectionFiles('riepilogo')).values()].reduce((sum,item)=>sum+(item.played||0),0);
+}
 function teamMatchCounts(){
   const counts={};
   for(const r of matchRows()){
     const home=col(r,['squadra casa','casa','home','squadra 1']);
     const away=col(r,['squadra trasferta','trasferta','ospite','away','squadra 2']);
-    const gh=col(r,['gol casa','reti casa','goal casa']);
-    const ga=col(r,['gol trasferta','reti trasferta','goal trasferta']);
-    const played=String(gh||ga||col(r,['risultato','score'])).trim()!=='';
-    if(played){ if(home) counts[norm(home)]=(counts[norm(home)]||0)+1; if(away) counts[norm(away)]=(counts[norm(away)]||0)+1; }
+    if(matchHasRealResult(r)){
+      if(home) counts[norm(home)]=(counts[norm(home)]||0)+1;
+      if(away) counts[norm(away)]=(counts[norm(away)]||0)+1;
+    }
   }
   return counts;
 }
@@ -2559,10 +2564,16 @@ function latestRiepilogoGiornata(){
 }
 function homeProgressStatus(){
   const total=totalCalendarioGiornate();
-  const latest=latestRiepilogoGiornata();
+  const files=sectionFiles('riepilogo');
+  const latestOpt=latestRiepilogoOption(files);
+  const latest=latestOpt ? (parseInt(giornataNumberFromText(latestOpt[1])||giornataNumberFromText(latestOpt[0])||'',10)||latestRiepilogoGiornata()) : latestRiepilogoGiornata();
   if(!total && !latest) return null;
+
+  const progress=latestOpt ? riepilogoRoundProgressMap(files).get(calendarioRoundKey(latestOpt[0])||calendarioRoundKey(latestOpt[1])) : null;
+  const suffix=progress?.partial ? ' (parziale)' : '';
+
   return {
-    value: total ? ((latest||0)+'/'+total) : String(latest||0),
+    value: total ? ((latest||0)+'/'+total+suffix) : (String(latest||0)+suffix),
     label: 'Dati aggiornati a giornata'
   };
 }
@@ -2601,11 +2612,11 @@ function warmupHomeImages(){
 
 function renderHome(){
   const el=document.getElementById('home'); el.innerHTML='';
-  const players=allPlayersFromTeams(), matches=matchRows();
+  const players=allPlayersFromTeams();
   const stats=[
     [sectionFiles('squadra').length,'Squadre'],
     [players.length,'Giocatori'],
-    [matches.length,'Partite disputate']
+    [playedMatchesCount(),'Partite disputate']
   ];
   const progress=homeProgressStatus();
   if(progress) stats.push([progress.value,progress.label]);
@@ -3214,9 +3225,9 @@ function wrappedCraziestMatch(){
   // (resultText/goalsFromResult), così il dato è sempre coerente con il tab Risultati.
   let best=null;
   matchRows().forEach(r=>{
+    if(!matchHasRealResult(r)) return;
     const res=resultText(r);
     const totalGoals=goalsFromResult(res);
-    if(!totalGoals) return;
     if(!best || totalGoals>best.totalGoals){
       const [home,away]=matchTeamsFromRow(r);
       best={home,away,result:res,totalGoals};
@@ -3228,8 +3239,10 @@ function wrappedTournamentTotals(){
   const matches=matchRows();
   let totalGoals=0, played=0;
   matches.forEach(r=>{
+    if(!matchHasRealResult(r)) return;
     const g=goalsFromResult(resultText(r));
-    if(g){ totalGoals+=g; played++; }
+    totalGoals+=g;
+    played++;
   });
   if(!played) return null;
   return { totalGoals, played, avgPerMatch:totalGoals/played };
@@ -4399,16 +4412,101 @@ function calendarioRoundKey(value){
   return giornataNumberFromText(value) || norm(value);
 }
 
-function calendarioPlayedKeys(){
-  const files=sectionFiles('riepilogo');
-  const keys=new Set();
+function addRoundCount(map,key,label,delta=1){
+  const k=calendarioRoundKey(key)||calendarioRoundKey(label);
+  if(!k) return;
+  const current=map.get(k)||{label:label||('Giornata '+k),count:0};
+  current.count += delta;
+  if(label && !current.label) current.label=label;
+  map.set(k,current);
+}
+
+function calendarioExpectedMatchesByKey(){
+  const map=new Map();
+  sectionFiles('calendario').forEach(f=>{
+    const raw=state.files[f]||'';
+    const block=parseBlockCalendar(raw);
+    if(block.length){
+      block.forEach(g=>{
+        const total=(g.partite||[]).filter(p=>String(p.casa||'').trim() && String(p.trasferta||'').trim()).length;
+        if(total) addRoundCount(map,g.label,g.label,total);
+      });
+      return;
+    }
+
+    rowsToObjects(state.rows[f]||[]).forEach(r=>{
+      const g=firstPresent(r,[['giornata','turno','round']]) || giornataLabelFromFile(f);
+      const label=giornataNumberFromText(g)?('Giornata '+giornataNumberFromText(g)):String(g||giornataLabelFromFile(f));
+      const home=firstPresent(r,[['squadra casa','casa','home','squadra 1','team casa']]);
+      const away=firstPresent(r,[['squadra trasferta','trasferta','ospite','away','squadra 2','team trasferta']]);
+      if(home && away) addRoundCount(map,g,label,1);
+    });
+  });
+  const out=new Map();
+  map.forEach((v,k)=>out.set(k,v.count));
+  return out;
+}
+
+function riepilogoRoundProgressMap(files){
+  const map=new Map();
+  const expected=calendarioExpectedMatchesByKey();
+  const ensure=(key,label)=>{
+    const k=calendarioRoundKey(key)||calendarioRoundKey(label);
+    if(!k) return null;
+    if(!map.has(k)){
+      map.set(k,{key:k,label:label||('Giornata '+k),hasRiepilogo:false,totalFromRiepilogo:0,played:0,total:expected.get(k)||0,completed:false,partial:false,display:''});
+    }
+    const item=map.get(k);
+    if(label && !item.label) item.label=label;
+    return item;
+  };
 
   riepilogoGiornateOptions(files,{fast:true}).forEach(([key,label])=>{
-    const k=calendarioRoundKey(key)||calendarioRoundKey(label);
-    if(k) keys.add(k);
+    const item=ensure(key,label);
+    if(item) item.hasRiepilogo=true;
   });
 
+  (files||[]).forEach(f=>{
+    const parsed=parseRiepilogoFile(f);
+    const all=[...parsed.partite,...parsed.marcatori,...(parsed.totaliMarcatori||[]),...parsed.mvp,...parsed.portiere,...parsed.autogoal,...parsed.statistiche];
+    all.forEach(r=>{
+      const item=ensure(rowGiornataKey(r,f),rowGiornataLabel(r,f));
+      if(item) item.hasRiepilogo=true;
+    });
+
+    (parsed.partite||[]).forEach(r=>{
+      const item=ensure(rowGiornataKey(r,f),rowGiornataLabel(r,f));
+      if(!item) return;
+      item.hasRiepilogo=true;
+      item.totalFromRiepilogo += 1;
+      if(matchHasRealResult(r)) item.played += 1;
+    });
+  });
+
+  expected.forEach((total,key)=>{
+    if(!map.has(key)) map.set(key,{key,label:'Giornata '+key,hasRiepilogo:false,totalFromRiepilogo:0,played:0,total,completed:false,partial:false,display:''});
+  });
+
+  map.forEach(item=>{
+    item.total=Math.max(item.total||0,item.totalFromRiepilogo||0);
+    item.display=item.total ? (item.played+'/'+item.total) : '';
+    item.completed=item.total>0 ? (item.hasRiepilogo && item.played>=item.total) : item.hasRiepilogo;
+    item.partial=item.hasRiepilogo && item.total>0 && item.played<item.total;
+  });
+
+  return map;
+}
+
+function completedRiepilogoKeys(){
+  const keys=new Set();
+  riepilogoRoundProgressMap(sectionFiles('riepilogo')).forEach((status,key)=>{
+    if(status.completed) keys.add(key);
+  });
   return keys;
+}
+
+function calendarioPlayedKeys(){
+  return completedRiepilogoKeys();
 }
 
 function buildCalendarioProgress(labels){
@@ -4428,29 +4526,46 @@ function buildCalendarioProgress(labels){
     return a.label.localeCompare(b.label,'it',{numeric:true});
   });
 
-  const played=calendarioPlayedKeys();
-  const firstTodo=ordered.find(x=>!played.has(x.key));
+  const roundProgress=riepilogoRoundProgressMap(sectionFiles('riepilogo'));
+  const firstTodo=ordered.find(x=>!(roundProgress.get(x.key)?.completed));
+  const currentPartial=ordered.find(x=>roundProgress.get(x.key)?.partial);
 
   const map=new Map();
 
   ordered.forEach(item=>{
-    const isPlayed=played.has(item.key);
+    const prog=roundProgress.get(item.key)||{completed:false,partial:false,played:0,total:0,display:''};
+    const isPlayed=!!prog.completed;
+    const isPartial=!!prog.partial;
     const isNext=firstTodo && item.key===firstTodo.key;
 
-    map.set(item.key,{
-      label:isPlayed?'Disputata':(isNext?'Prossima da disputare':'Da disputare'),
-      cls:isPlayed?'is-played':(isNext?'is-next':'is-todo'),
-      icon:isPlayed?'✅':(isNext?'🔥':'⏳'),
-      played:isPlayed,
-      next:isNext
-    });
+    let label='Da disputare';
+    let cls='is-todo';
+    let icon='⏳';
+    if(isPlayed){
+      label='Disputata';
+      cls='is-played';
+      icon='✅';
+    }else if(isPartial){
+      label='In corso'+(prog.display ? ' ('+prog.display+')' : '');
+      cls='is-next';
+      icon='🔥';
+    }else if(isNext){
+      label='Prossima da disputare';
+      cls='is-next';
+      icon='🔥';
+    }
+
+    map.set(item.key,{label,cls,icon,played:isPlayed,partial:isPartial,next:isNext,progress:prog});
   });
+
+  const completedCount=ordered.filter(x=>roundProgress.get(x.key)?.completed).length;
 
   return {
     map,
     total:ordered.length,
-    playedCount:ordered.filter(x=>played.has(x.key)).length,
-    next:firstTodo||null
+    playedCount:completedCount,
+    next:(currentPartial||firstTodo)||null,
+    currentPartial:currentPartial ? {...currentPartial, progress:roundProgress.get(currentPartial.key)} : null
   };
 }
 
@@ -4482,8 +4597,15 @@ function renderCalendarioProgressCard(el, progress){
   titleBox.appendChild(p);
 
   const globalBadge=document.createElement('span');
-  globalBadge.className='calendar-status-badge '+(progress.playedCount>=progress.total?'is-played':(progress.next?'is-next':'is-todo'));
-  globalBadge.textContent=progress.playedCount>=progress.total?'🏁 Torneo completato':(progress.next?'🔥 Prossima: '+progress.next.label:'⏳ In attesa');
+  globalBadge.className='calendar-status-badge '+(progress.playedCount>=progress.total?'is-played':(progress.currentPartial?'is-next':(progress.next?'is-next':'is-todo')));
+  if(progress.playedCount>=progress.total){
+    globalBadge.textContent='🏁 Torneo completato';
+  }else if(progress.currentPartial){
+    const d=progress.currentPartial.progress?.display;
+    globalBadge.textContent='🔥 '+progress.currentPartial.label+' in corso'+(d?' ('+d+')':'');
+  }else{
+    globalBadge.textContent=progress.next?'🔥 Prossima: '+progress.next.label:'⏳ In attesa';
+  }
 
   head.appendChild(titleBox);
   head.appendChild(globalBadge);
@@ -4560,7 +4682,7 @@ function renderCalendarioBlock(el, files){
     const inner=document.createElement('div'); inner.className='tableWrap';
 
     partiteFiltrate.forEach(p=>{
-      const m=document.createElement('div'); m.className='match '+(roundStatus.played?'is-calendar-played':(roundStatus.next?'is-calendar-next':'is-calendar-todo'));
+      const m=document.createElement('div'); m.className='match '+(roundStatus.played?'is-calendar-played':((roundStatus.next||roundStatus.partial)?'is-calendar-next':'is-calendar-todo'));
 
       if(p.riposa&&!p.casa&&!p.trasferta){
         // Riga solo riposo
@@ -5193,6 +5315,37 @@ function resultText(r){
   return '-';
 }
 function esitoText(r){ return firstPresent(r,[['esito','vincitore','outcome']]); }
+function numericScoreCell(value){
+  const text=String(value??'').trim();
+  if(!text || /^[—–-]+$/.test(text)) return null;
+  const normalized=text.replace(',','.');
+  if(!/^-?\d+(?:\.\d+)?$/.test(normalized)) return null;
+  const n=parseInt(normalized,10);
+  return Number.isFinite(n) ? n : null;
+}
+function scorePairFromText(value){
+  const text=String(value||'').trim();
+  if(!text || /^[—–-]+$/.test(text)) return null;
+  const nums=text.match(/\d+/g)||[];
+  if(nums.length<2) return null;
+  return [parseInt(nums[0],10),parseInt(nums[1],10)];
+}
+function resultScorePairFromRow(r){
+  const direct=firstPresent(r,[['risultato','score']]);
+  if(direct){
+    const pair=scorePairFromText(direct);
+    if(pair) return pair;
+  }
+  const gh=firstPresent(r,[['gol casa','reti casa','goal casa','gc','gol squadra casa']]);
+  const ga=firstPresent(r,[['gol trasferta','reti trasferta','goal trasferta','gt','gol squadra trasferta']]);
+  const h=numericScoreCell(gh);
+  const a=numericScoreCell(ga);
+  if(h!==null && a!==null) return [h,a];
+  return null;
+}
+function matchHasRealResult(r){
+  return !!resultScorePairFromRow(r);
+}
 function goalsFromResult(res){
   const nums=String(res||'').match(/\d+/g)||[];
   return nums.length>=2 ? nums.slice(0,2).reduce((s,x)=>s+parseInt(x,10),0) : 0;
@@ -5418,16 +5571,17 @@ function riepilogoTopScorerLabel(partite, marcatori, totaliMarcatori){
   return '';
 }
 function deriveStats(partite, marcatori, stats, totaliMarcatori){
-  const partiteGiocate=statValue(stats,['partite giocate','partite']) || partite.length;
-  const golTotali=statValue(stats,['gol totali','goal totali']) || partite.reduce((s,r)=>s+goalsFromResult(resultText(r)),0);
+  const partiteConRisultato=(partite||[]).filter(matchHasRealResult);
+  const partiteGiocate=statValue(stats,['partite giocate','partite']) || partiteConRisultato.length;
+  const golTotali=statValue(stats,['gol totali','goal totali']) || partiteConRisultato.reduce((s,r)=>s+goalsFromResult(resultText(r)),0);
   const media=statValue(stats,['media gol','media goal']) || (partiteGiocate? (Number(golTotali)/Number(partiteGiocate)).toFixed(2).replace('.',',') : '');
-  const clean=statValue(stats,['clean sheet','cleansheet']) || partite.reduce((s,r)=>{
+  const clean=statValue(stats,['clean sheet','cleansheet']) || partiteConRisultato.reduce((s,r)=>{
     const nums=String(resultText(r)).match(/\d+/g)||[];
     return s + (nums.slice(0,2).filter(x=>parseInt(x,10)===0).length);
   },0);
   let maxMatch=statValue(stats,['partita con più gol','partita con piu gol']);
-  if(!maxMatch && partite.length){
-    const best=[...partite].sort((a,b)=>goalsFromResult(resultText(b))-goalsFromResult(resultText(a)))[0];
+  if(!maxMatch && partiteConRisultato.length){
+    const best=[...partiteConRisultato].sort((a,b)=>goalsFromResult(resultText(b))-goalsFromResult(resultText(a)))[0];
     const casa=firstPresent(best,[['squadra casa','casa','home','squadra 1','team casa']]);
     const trasferta=firstPresent(best,[['squadra trasferta','trasferta','ospite','away','squadra 2','team trasferta']]);
     maxMatch=[casa,trasferta].filter(Boolean).join(' - ')+' ('+resultText(best)+')';
