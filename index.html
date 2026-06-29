@@ -6093,7 +6093,7 @@ function renderRiepilogoGiornate(){
     const externalScorerRows=externalScorerResiduals.map(({team,count})=>({
       'Sezione': 'Marcatore',
       'Giornata': rowGiornataKey(allRows[0]||{},f)||'',
-      'Squadra': team,
+      'Squadra': '-',
       'Giocatore': 'Marcature di esterni',
       'Gol': count,
       _noLink: true
@@ -6103,11 +6103,11 @@ function renderRiepilogoGiornate(){
     renderMiniSection(content,'Marcatori della giornata',marcatoriRows,'player',playerSearch?'':'Nessun marcatore indicato.',tablePrefix+'_marcatori',['sezione','giocatore','marcatore','gol','goal','reti'],['gol','goal','reti']);
     // Costruisce righe sintetiche per premi assegnati a giocatori esterni,
     // da iniettare direttamente nella tabella come righe normali.
-    // MVP esterni: "Giocatore esterno", squadra "/", no link
+    // MVP esterni: "Giocatore esterno", squadra "-", no link
     const mvpExternalRows=externalMvpMatches.map(()=>({
       'Sezione': 'MVP',
       'Giornata': rowGiornataKey(allRows[0]||{},f)||'',
-      'Squadra': '/',
+      'Squadra': '-',
       'Giocatore': 'Esterno',
       'PuntiMVP': 'N/A',
       _noLink: true
@@ -6115,11 +6115,11 @@ function renderRiepilogoGiornate(){
     const mvpRows=[...mvp,...mvpExternalRows];
     const mvpNoInternalText=(!playerSearch&&!mvpRows.length)?'Nessun MVP indicato.':'';
     renderMiniSection(content,'MVP della giornata',mvpRows,'player',mvpNoInternalText,tablePrefix+'_mvp',['sezione','giocatore','puntimvp','punti mvp','mvp','giornata','squadra'],['puntimvp','punti mvp','punti']);
-    // Portiere esterni: "Giocatore esterno", squadra "/", partita nella colonna Partita, no link
+    // Portiere esterni: "Giocatore esterno", squadra "-", partita nella colonna Partita, no link
     const portiereExternalRows=externalPortiereMatches.map(({matchLabel})=>({
       'Sezione': 'Miglior portiere',
       'Giornata': rowGiornataKey(allRows[0]||{},f)||'',
-      'Squadra': '/',
+      'Squadra': '-',
       'Portiere': 'Esterno',
       'PuntiPortiere': 'N/A',
       'Partita': matchLabel||'',
