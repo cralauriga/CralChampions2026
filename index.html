@@ -1698,7 +1698,14 @@ function buildTable(rows, tableId, imgType, priorityNames, highlightName){
   if(hasSearch) body=body.filter(rowMatchesSearch);
   if(!body.length) return buildEl('div','empty',hasSearch?'Nessun risultato per la ricerca.':'Nessun dato disponibile.');
   const order=reorderIndices(headers,priorityNames);
-  if(order){ headers=order.map(i=>headers[i]); body=body.map(r=>order.map(i=>r[i])); }
+  if(order){
+    headers=order.map(i=>headers[i]);
+    body=body.map(r=>{
+      const reordered=order.map(i=>r[i]);
+      if(r._noLink) reordered._noLink=true;
+      return reordered;
+    });
+  }
   if(!tableId){ tableId='tbl_'+(++_tableCounter); }
   const sort=state.sortState[tableId]||{col:-1,dir:'asc'};
   const nameColIdx = imgType ? findNameColIndex(headers, imgType) : -1;
@@ -1754,12 +1761,16 @@ function buildTable(rows, tableId, imgType, priorityNames, highlightName){
         const name=row[i]??'';
         const cls=imgType==='team'?'tbl-logo':'tbl-avatar';
         cell.appendChild(imgOrInitialEl(imgType,name,cls));
-        const labelEl=document.createElement(imgType==='player'?'button':'span');
-        if(imgType==='player'){
+        const noPlayerDetail = !!row._noLink;
+        const labelEl=document.createElement(imgType==='player' && !noPlayerDetail ? 'button':'span');
+        if(imgType==='player' && !noPlayerDetail){
           labelEl.type='button';
           labelEl.className='player-link player-link-inline';
           labelEl.onclick=(ev)=>{ ev.stopPropagation(); openPlayerProfile(name); };
           labelEl.title='Apri scheda giocatore';
+        } else if(imgType==='player') {
+          labelEl.className='riepilogo-player-label';
+          labelEl.title='Dettaglio giocatore non disponibile';
         }
         labelEl.textContent=name;
         cell.appendChild(labelEl);
@@ -5677,7 +5688,11 @@ function objectsToRows(objs){
   // per quella sezione specifica; nasconderle rende le tabelle leggibili.
   const headers=allHeaders.filter(h=>objs.some(o=>String(o[h]??'').trim()!==''));
   if(!headers.length) return [];
-  return [headers,...objs.map(o=>headers.map(h=>o[h]??''))];
+  return [headers,...objs.map(o=>{
+    const row=headers.map(h=>o[h]??'');
+    if(o._noLink) row._noLink=true;
+    return row;
+  })];
 }
 
 function teamNameFromMatchRow(r, names){
