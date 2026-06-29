@@ -6239,7 +6239,55 @@ function renderMatchSection(sectionId, kind){
           const home=col(r,['squadra casa','casa','home','squadra 1'])||Object.values(r)[0]||'';
           const away=col(r,['squadra trasferta','trasferta','ospite','away','squadra 2'])||Object.values(r)[1]||'';
           const score=col(r,['risultato','score'])||[col(r,['gol casa','reti casa']),col(r,['gol trasferta','reti trasferta'])].filter(x=>x!==''&&x!=null).join(' - ');
+          const note=firstPresent(r,[['note','commento','descrizione']]);
+          const inlineMarcatori=extractInlineField(note,'Marcatori');
+          const inlineMvp=extractInlineField(note,'MVP');
+          const marcatoriCasa=splitPeopleList(firstPresent(r,[['marcatori casa','marcatori squadra casa','gol casa marcatori','scorer casa']]) || firstPresent(r,[['marcatori home']]));
+          const marcatoriTrasferta=splitPeopleList(firstPresent(r,[['marcatori trasferta','marcatori ospite','marcatori squadra trasferta','gol trasferta marcatori','scorer trasferta']]) || firstPresent(r,[['marcatori away']]));
+          const marcatoriGenerici=splitInlinePeople(firstPresent(r,[['marcatori','scorers','reti']]) || inlineMarcatori);
+          const mvp=splitInlinePeople(firstPresent(r,[['mvp','migliore in campo','man of the match','motm']]) || inlineMvp);
+          const esito=esitoText(r);
+          const res=resultText(r)||score;
+          const scorePair=parseScorePair(res);
+          const autogoalRaw=firstPresent(r,[['autogol','autogoal','ag']]);
+          const autogoalCount=num(autogoalRaw)||(splitPeopleList(autogoalRaw).filter(Boolean).length)||0;
+          let externalCasa=0, externalTrasferta=0, externalGeneric=0;
+          if(scorePair){
+            const [ghTot,gaTot]=scorePair;
+            if(marcatoriCasa.length || marcatoriTrasferta.length){
+              externalCasa=Math.max(0, ghTot - countGoalsInTokenList(marcatoriCasa));
+              externalTrasferta=Math.max(0, gaTot - countGoalsInTokenList(marcatoriTrasferta));
+              let ag=autogoalCount;
+              while(ag>0){
+                if(externalCasa>=externalTrasferta && externalCasa>0) externalCasa--;
+                else if(externalTrasferta>0) externalTrasferta--;
+                else break;
+                ag--;
+              }
+            } else if(marcatoriGenerici.length){
+              externalGeneric=Math.max(0, ghTot+gaTot - countGoalsInTokenList(marcatoriGenerici) - autogoalCount);
+            }
+          }
+          const hasRoster=rosterIdentityRecords().length>0;
+          const filterKnown=(list)=>hasRoster ? list.filter(n=>!isPersonExternal(cleanRiepilogoScorerName(n))) : list;
+          const marcatoriCasaKnown=filterKnown(marcatoriCasa);
+          const marcatoriTrasfertaKnown=filterKnown(marcatoriTrasferta);
+          const marcatoriGenericiKnown=filterKnown(marcatoriGenerici);
+          if(hasRoster && scorePair){
+            if(marcatoriCasa.length || marcatoriTrasferta.length){
+              const removedCasa=marcatoriCasa.filter(n=>isPersonExternal(cleanRiepilogoScorerName(n)));
+              const removedTrasf=marcatoriTrasferta.filter(n=>isPersonExternal(cleanRiepilogoScorerName(n)));
+              externalCasa=Math.max(0, externalCasa + countGoalsInTokenList(removedCasa));
+              externalTrasferta=Math.max(0, externalTrasferta + countGoalsInTokenList(removedTrasf));
+            } else if(marcatoriGenerici.length){
+              const removedGen=marcatoriGenerici.filter(n=>isPersonExternal(cleanRiepilogoScorerName(n)));
+              externalGeneric=Math.max(0, externalGeneric + countGoalsInTokenList(removedGen));
+            }
+          }
+          const matchPlayed=!!scorePair;
+          const mvpExternal=matchPlayed && hasRoster && mvp.length>0 && mvp.every(n=>isPersonExternal(n));
           const m=document.createElement('div'); m.className='match';
+          const left=document.createElement('div'); left.style.cssText='min-width:0;flex:1';
           const teamsWrap=document.createElement('div'); teamsWrap.className='match-teams';
           const homeTeam=document.createElement('div'); homeTeam.className='match-team';
           homeTeam.appendChild(imgOrInitialEl('team',home,'mini-logo'));
@@ -6250,13 +6298,42 @@ function renderMatchSection(sectionId, kind){
           awayTeam.appendChild(imgOrInitialEl('team',away,'mini-logo'));
           const awayName=document.createElement('span'); awayName.className='match-name'; awayName.textContent=away;
           awayTeam.appendChild(awayName);
-          const meta=document.createElement('div'); meta.className='match-meta';
-          if(data){ const ds=document.createElement('span'); ds.className='small'; ds.textContent=data; meta.appendChild(ds); }
-          meta.appendChild(teamsWrap);
           teamsWrap.appendChild(homeTeam); teamsWrap.appendChild(vs); teamsWrap.appendChild(awayTeam);
-          const left=document.createElement('div'); left.style.minWidth='0'; left.style.flex='1';
-          left.appendChild(meta);
-          const sc=document.createElement('div'); sc.className='score'; sc.textContent=score||'-';
+          left.appendChild(teamsWrap);
+          const metaParts=[data,esito?('Esito: '+esito):''].filter(Boolean);
+          if(metaParts.length){ const meta=document.createElement('div'); meta.className='small'; meta.textContent=metaParts.join(' · '); left.appendChild(meta); }
+          addPeopleLineSmart(left,'Marcatori casa',marcatoriCasaKnown,true,home,[]);
+          addExternalScorerPill(left,'Marcatori casa',externalCasa,home);
+          addPeopleLineSmart(left,'Marcatori trasf.',marcatoriTrasfertaKnown,true,away,[]);
+          addExternalScorerPill(left,'Marcatori trasf.',externalTrasferta,away);
+          if(!marcatoriCasa.length && !marcatoriTrasferta.length){
+            addPeopleLineSmart(left,'Marcatori',marcatoriGenericiKnown,true,'',[],[home,away]);
+            addExternalScorerPill(left,'Marcatori',externalGeneric,'');
+          }
+          if(autogoalCount>0){
+            const agRow=document.createElement('div');
+            agRow.style.cssText='display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap';
+            const agIcon=document.createElement('b');
+            agIcon.className='small'; agIcon.style.minWidth='28px'; agIcon.style.fontSize='16px';
+            agIcon.textContent='AG'; agIcon.title='Autogol';
+            agRow.appendChild(agIcon);
+            const agPill=document.createElement('span');
+            agPill.style.cssText='display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--soft);border-radius:999px;padding:4px 8px;font-size:12px;font-weight:700';
+            agPill.textContent='Autogol'+(autogoalCount>1?' ×'+String(autogoalCount):'');
+            agRow.appendChild(agPill);
+            left.appendChild(agRow);
+          }
+          if(!mvpExternal) addPeopleLineSmart(left,'MVP',mvp,true,'',[]);
+          else addExternalAwardPill(left,'MVP');
+          const notePulita=cleanRiepilogoNote(note);
+          if(notePulita){ const n=document.createElement('div'); n.className='small'; n.style.marginTop='8px'; n.textContent=notePulita; left.appendChild(n); }
+          const extraParts=[];
+          if(externalCasa>0) extraParts.push('Marcature esterne ×'+externalCasa+' ('+home+')');
+          if(externalTrasferta>0) extraParts.push('Marcature esterne ×'+externalTrasferta+' ('+away+')');
+          if(externalGeneric>0) extraParts.push('Marcature esterne ×'+externalGeneric);
+          if(mvpExternal) extraParts.push('MVP: Esterno');
+          if(extraParts.length){ const ex=document.createElement('div'); ex.className='small'; ex.style.marginTop='4px'; ex.style.opacity='.7'; ex.textContent=extraParts.join(' | '); left.appendChild(ex); }
+          const sc=document.createElement('div'); sc.className='score'; sc.textContent=res||'-';
           m.appendChild(left); m.appendChild(sc); inner.appendChild(m);
         });
         card.appendChild(inner); el.appendChild(card);
@@ -6297,13 +6374,96 @@ function renderMatchSection(sectionId, kind){
     const awayName=document.createElement('span'); awayName.className='match-name'; awayName.textContent=away;
     awayTeam.appendChild(awayName);
 
-    const meta=document.createElement('div'); meta.className='match-meta';
-    const ds=document.createElement('span'); ds.className='small'; ds.textContent=data;
-    meta.appendChild(ds); meta.appendChild(teamsWrap);
     teamsWrap.appendChild(homeTeam); teamsWrap.appendChild(vs); teamsWrap.appendChild(awayTeam);
 
     const left=document.createElement('div'); left.style.minWidth='0'; left.style.flex='1';
-    left.appendChild(meta);
+
+    // Squadre + data/stato
+    left.appendChild(teamsWrap);
+    if(data){ const ds=document.createElement('div'); ds.className='small'; ds.textContent=data; left.appendChild(ds); }
+
+    // ── Gol esterni + Autogoal: solo per Risultati ──────────────────────────────
+    if(kind==='risultati'){
+      const note=firstPresent(r,[['note','commento','descrizione']]);
+      const inlineMarcatori=extractInlineField(note,'Marcatori');
+      const inlineMvp=extractInlineField(note,'MVP');
+      const marcatoriCasa=splitPeopleList(firstPresent(r,[['marcatori casa','marcatori squadra casa','gol casa marcatori','scorer casa']]) || firstPresent(r,[['marcatori home']]));
+      const marcatoriTrasferta=splitPeopleList(firstPresent(r,[['marcatori trasferta','marcatori ospite','marcatori squadra trasferta','gol trasferta marcatori','scorer trasferta']]) || firstPresent(r,[['marcatori away']]));
+      const marcatoriGenerici=splitInlinePeople(firstPresent(r,[['marcatori','scorers','reti']]) || inlineMarcatori);
+      const mvp=splitInlinePeople(firstPresent(r,[['mvp','migliore in campo','man of the match','motm']]) || inlineMvp);
+      const esito=esitoText(r);
+      const res=resultText(r)||score;
+      const scorePair=parseScorePair(res);
+      const autogoalRaw=firstPresent(r,[['autogol','autogoal','ag']]);
+      const autogoalCount=num(autogoalRaw)||(splitPeopleList(autogoalRaw).filter(Boolean).length)||0;
+      let externalCasa=0, externalTrasferta=0, externalGeneric=0;
+      if(scorePair){
+        const [ghTot,gaTot]=scorePair;
+        if(marcatoriCasa.length || marcatoriTrasferta.length){
+          externalCasa=Math.max(0, ghTot - countGoalsInTokenList(marcatoriCasa));
+          externalTrasferta=Math.max(0, gaTot - countGoalsInTokenList(marcatoriTrasferta));
+          let ag=autogoalCount;
+          while(ag>0){
+            if(externalCasa>=externalTrasferta && externalCasa>0) externalCasa--;
+            else if(externalTrasferta>0) externalTrasferta--;
+            else break;
+            ag--;
+          }
+        } else if(marcatoriGenerici.length){
+          externalGeneric=Math.max(0, ghTot+gaTot - countGoalsInTokenList(marcatoriGenerici) - autogoalCount);
+        }
+      }
+      const hasRoster=rosterIdentityRecords().length>0;
+      const filterKnown=(list)=>hasRoster ? list.filter(n=>!isPersonExternal(cleanRiepilogoScorerName(n))) : list;
+      const marcatoriCasaKnown=filterKnown(marcatoriCasa);
+      const marcatoriTrasfertaKnown=filterKnown(marcatoriTrasferta);
+      const marcatoriGenericiKnown=filterKnown(marcatoriGenerici);
+      if(hasRoster && scorePair){
+        if(marcatoriCasa.length || marcatoriTrasferta.length){
+          const removedCasa=marcatoriCasa.filter(n=>isPersonExternal(cleanRiepilogoScorerName(n)));
+          const removedTrasf=marcatoriTrasferta.filter(n=>isPersonExternal(cleanRiepilogoScorerName(n)));
+          externalCasa=Math.max(0, externalCasa + countGoalsInTokenList(removedCasa));
+          externalTrasferta=Math.max(0, externalTrasferta + countGoalsInTokenList(removedTrasf));
+        } else if(marcatoriGenerici.length){
+          const removedGen=marcatoriGenerici.filter(n=>isPersonExternal(cleanRiepilogoScorerName(n)));
+          externalGeneric=Math.max(0, externalGeneric + countGoalsInTokenList(removedGen));
+        }
+      }
+      const matchPlayed=!!scorePair;
+      const mvpExternal=matchPlayed && hasRoster && mvp.length>0 && mvp.every(n=>isPersonExternal(n));
+      if(esito){ const es=document.createElement('div'); es.className='small'; es.textContent='Esito: '+esito; left.appendChild(es); }
+      addPeopleLineSmart(left,'Marcatori casa',marcatoriCasaKnown,true,home,[]);
+      addExternalScorerPill(left,'Marcatori casa',externalCasa,home);
+      addPeopleLineSmart(left,'Marcatori trasf.',marcatoriTrasfertaKnown,true,away,[]);
+      addExternalScorerPill(left,'Marcatori trasf.',externalTrasferta,away);
+      if(!marcatoriCasa.length && !marcatoriTrasferta.length){
+        addPeopleLineSmart(left,'Marcatori',marcatoriGenericiKnown,true,'',[],[home,away]);
+        addExternalScorerPill(left,'Marcatori',externalGeneric,'');
+      }
+      if(autogoalCount>0){
+        const agRow=document.createElement('div');
+        agRow.style.cssText='display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap';
+        const agIcon=document.createElement('b');
+        agIcon.className='small'; agIcon.style.minWidth='28px'; agIcon.style.fontSize='16px';
+        agIcon.textContent='AG'; agIcon.title='Autogol';
+        agRow.appendChild(agIcon);
+        const agPill=document.createElement('span');
+        agPill.style.cssText='display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--soft);border-radius:999px;padding:4px 8px;font-size:12px;font-weight:700';
+        agPill.textContent='Autogol'+(autogoalCount>1?' ×'+String(autogoalCount):'');
+        agRow.appendChild(agPill);
+        left.appendChild(agRow);
+      }
+      if(!mvpExternal) addPeopleLineSmart(left,'MVP',mvp,true,'',[]);
+      else addExternalAwardPill(left,'MVP');
+      const notePulita=cleanRiepilogoNote(note);
+      if(notePulita){ const n=document.createElement('div'); n.className='small'; n.style.marginTop='8px'; n.textContent=notePulita; left.appendChild(n); }
+      const extraParts=[];
+      if(externalCasa>0) extraParts.push('Marcature esterne ×'+externalCasa+' ('+home+')');
+      if(externalTrasferta>0) extraParts.push('Marcature esterne ×'+externalTrasferta+' ('+away+')');
+      if(externalGeneric>0) extraParts.push('Marcature esterne ×'+externalGeneric);
+      if(mvpExternal) extraParts.push('MVP: Esterno');
+      if(extraParts.length){ const ex=document.createElement('div'); ex.className='small'; ex.style.marginTop='4px'; ex.style.opacity='.7'; ex.textContent=extraParts.join(' | '); left.appendChild(ex); }
+    }
 
     const sc=document.createElement('div'); sc.className='score'; sc.textContent=score||'-';
     m.appendChild(left);
