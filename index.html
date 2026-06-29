@@ -6020,16 +6020,27 @@ function renderRiepilogoGiornate(){
         const mCasa=splitPeopleList(firstPresent(r,[['marcatori casa','marcatori squadra casa','gol casa marcatori','scorer casa']])||firstPresent(r,[['marcatori home']]));
         const mTrasf=splitPeopleList(firstPresent(r,[['marcatori trasferta','marcatori ospite','marcatori squadra trasferta','gol trasferta marcatori','scorer trasferta']])||firstPresent(r,[['marcatori away']]));
         const mGen=splitInlinePeople(firstPresent(r,[['marcatori','scorers','reti']])||extractInlineField(firstPresent(r,[['note','commento','descrizione']]),'Marcatori'));
-        const autogoalRaw=firstPresent(r,[['autogol','autogoal','ag']]);
-        const autogoalCount=num(autogoalRaw)||(splitPeopleList(autogoalRaw).filter(Boolean).length)||0;
+        // Autogoal: colonna inline + righe separate (Sezione=Autogoal) per questa partita
+        const autogoalInlineR=num(firstPresent(r,[['autogol','autogoal','ag']]))||0;
+        const normTmR=s=>String(s||'').toLowerCase().trim();
+        const agFromRowsR=autogoalRaw.reduce((sum,cr)=>{
+          const sq=normTmR(firstPresent(cr,[['squadra','team','squadra casa','casa']]));
+          if(sq===normTmR(casa)||sq===normTmR(trasferta)){
+            const g=num(firstPresent(cr,[['gol','goal','reti','valore']]))||1;
+            return sum+g;
+          }
+          return sum;
+        },0);
+        const autogoalCount=autogoalInlineR+agFromRowsR;
         if(mCasa.length||mTrasf.length){
           let extC=Math.max(0,ghTot-countGoalsInTokenList(mCasa));
           let extT=Math.max(0,gaTot-countGoalsInTokenList(mTrasf));
-          // aggiungi i gol degli esterni nominati rimossi dal filtro
+          // Prima aggiungi i gol degli esterni nominati rimossi dal filtro roster
           const remC=mCasa.filter(n=>isPersonExternal(cleanRiepilogoScorerName(n)));
           const remT=mTrasf.filter(n=>isPersonExternal(cleanRiepilogoScorerName(n)));
           extC=Math.max(0,extC+countGoalsInTokenList(remC));
           extT=Math.max(0,extT+countGoalsInTokenList(remT));
+          // Poi scala gli autogol dal residuo della squadra con residuo maggiore
           let ag=autogoalCount;
           while(ag>0){ if(extC>=extT&&extC>0) extC--; else if(extT>0) extT--; else break; ag--; }
           if(extC>0) externalScorerResiduals.push({team:casa,count:extC});
