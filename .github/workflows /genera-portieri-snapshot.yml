@@ -1,0 +1,53 @@
+name: Genera snapshot portieri
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'data/**/*.csv'
+      - 'tools/genera_portieri_snapshot.js'
+      - '.github/workflows/genera-portieri-snapshot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-snapshot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Genera data/portieri_snapshot.json
+        run: node tools/genera_portieri_snapshot.js .
+
+      - name: Commit snapshot aggiornato
+        run: |
+          if [ ! -f data/portieri_snapshot.json ]; then
+            echo "Nessuno snapshot generato."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add data/portieri_snapshot.json
+
+          if git diff --cached --quiet; then
+            echo "Snapshot portieri gia aggiornato."
+            exit 0
+          fi
+
+          git commit -m "Aggiorna snapshot portieri"
+          git push
