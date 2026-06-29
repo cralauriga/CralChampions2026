@@ -5831,15 +5831,41 @@ function renderPartiteRiepilogo(parent,rows,file,contextRows){
     const scorePair=parseScorePair(res);
 
     // ── Gol residui per squadra (marcature esterne) ──────────────────────────
-    const autogoalRaw=firstPresent(r,[['autogol','autogoal','ag']]);
-    const autogoalCount=num(autogoalRaw)||(splitPeopleList(autogoalRaw).filter(Boolean).length)||0;
+    // Gli autogoal possono stare nella colonna inline della riga partita OPPURE
+    // in righe separate (Sezione=Autogoal) passate via contextRows.
+    const autogoalInline=num(firstPresent(r,[['autogol','autogoal','ag']]))||0;
+    const normTeamAg=s=>String(s||'').toLowerCase().trim();
+    const agContextRows=(contextRows||[]).filter(cr=>{
+      const sez=normTeamAg(firstPresent(cr,[['sezione','section']]));
+      return sez==='autogoal'||sez==='autogol'||sez==='autogoale';
+    });
+    const agFromRows=agContextRows.reduce((sum,cr)=>{
+      const sq=normTeamAg(firstPresent(cr,[['squadra','team','squadra casa','casa']]));
+      if(sq===normTeamAg(casa)||sq===normTeamAg(trasferta)){
+        const g=num(firstPresent(cr,[['gol','goal','reti','valore']]))||1;
+        return sum+g;
+      }
+      return sum;
+    },0);
+    const autogoalCount=autogoalInline+agFromRows;
+    // ── Se ci sono file squadra, filtra via i nomi esterni dalla lista nominale ─
+    const hasRoster=rosterIdentityRecords().length>0;
+    const filterKnown=(list)=>hasRoster ? list.filter(n=>!isPersonExternal(cleanRiepilogoScorerName(n))) : list;
+    const marcatoriCasaKnown=filterKnown(marcatoriCasa);
+    const marcatoriTrasfertaKnown=filterKnown(marcatoriTrasferta);
+    const marcatoriGenericiKnown=filterKnown(marcatoriGenerici);
     let externalCasa=0, externalTrasferta=0, externalGeneric=0;
     if(scorePair){
       const [ghTot,gaTot]=scorePair;
       if(marcatoriCasa.length || marcatoriTrasferta.length){
         externalCasa=Math.max(0, ghTot - countGoalsInTokenList(marcatoriCasa));
         externalTrasferta=Math.max(0, gaTot - countGoalsInTokenList(marcatoriTrasferta));
-        // Scala gli autogol dal residuo della squadra con residuo maggiore.
+        // Prima aggiungi i gol degli esterni nominati rimossi dal filtro roster
+        const removedCasa=marcatoriCasa.filter(n=>isPersonExternal(cleanRiepilogoScorerName(n)));
+        const removedTrasf=marcatoriTrasferta.filter(n=>isPersonExternal(cleanRiepilogoScorerName(n)));
+        externalCasa=Math.max(0, externalCasa + countGoalsInTokenList(removedCasa));
+        externalTrasferta=Math.max(0, externalTrasferta + countGoalsInTokenList(removedTrasf));
+        // Poi scala gli autogol dal residuo della squadra con residuo maggiore
         let ag=autogoalCount;
         while(ag>0){
           if(externalCasa>=externalTrasferta && externalCasa>0) externalCasa--;
@@ -5848,26 +5874,8 @@ function renderPartiteRiepilogo(parent,rows,file,contextRows){
           ag--;
         }
       } else if(marcatoriGenerici.length){
-        externalGeneric=Math.max(0, ghTot+gaTot - countGoalsInTokenList(marcatoriGenerici) - autogoalCount);
-      }
-    }
-
-    // ── Se ci sono file squadra, filtra via i nomi esterni dalla lista nominale ─
-    const hasRoster=rosterIdentityRecords().length>0;
-    const filterKnown=(list)=>hasRoster ? list.filter(n=>!isPersonExternal(cleanRiepilogoScorerName(n))) : list;
-    const marcatoriCasaKnown=filterKnown(marcatoriCasa);
-    const marcatoriTrasfertaKnown=filterKnown(marcatoriTrasferta);
-    const marcatoriGenericiKnown=filterKnown(marcatoriGenerici);
-    // Ricalcola il residuo aggiungendo i gol degli esterni rimossi dalle liste nominate.
-    if(hasRoster && scorePair){
-      if(marcatoriCasa.length || marcatoriTrasferta.length){
-        const removedCasa=marcatoriCasa.filter(n=>isPersonExternal(cleanRiepilogoScorerName(n)));
-        const removedTrasf=marcatoriTrasferta.filter(n=>isPersonExternal(cleanRiepilogoScorerName(n)));
-        externalCasa=Math.max(0, externalCasa + countGoalsInTokenList(removedCasa));
-        externalTrasferta=Math.max(0, externalTrasferta + countGoalsInTokenList(removedTrasf));
-      } else if(marcatoriGenerici.length){
         const removedGen=marcatoriGenerici.filter(n=>isPersonExternal(cleanRiepilogoScorerName(n)));
-        externalGeneric=Math.max(0, externalGeneric + countGoalsInTokenList(removedGen));
+        externalGeneric=Math.max(0, ghTot+gaTot - countGoalsInTokenList(marcatoriGenerici) - autogoalCount + countGoalsInTokenList(removedGen));
       }
     }
 
@@ -5901,6 +5909,19 @@ function renderPartiteRiepilogo(parent,rows,file,contextRows){
     if(!marcatoriCasa.length && !marcatoriTrasferta.length){
       addPeopleLineSmart(left,'Marcatori',marcatoriGenericiKnown,true,'',contextRows,[casa,trasferta]);
       addExternalScorerPill(left,'Marcatori',externalGeneric,'');
+    }
+    if(autogoalCount>0){
+      const agRow=document.createElement('div');
+      agRow.style.cssText='display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap';
+      const agIcon=document.createElement('b');
+      agIcon.className='small'; agIcon.style.minWidth='28px'; agIcon.style.fontSize='16px';
+      agIcon.textContent='AG'; agIcon.title='Autogol';
+      agRow.appendChild(agIcon);
+      const agPill=document.createElement('span');
+      agPill.style.cssText='display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--soft);border-radius:999px;padding:4px 8px;font-size:12px;font-weight:700';
+      agPill.textContent='Autogol'+(autogoalCount>1?' ×'+String(autogoalCount):'');
+      agRow.appendChild(agPill);
+      left.appendChild(agRow);
     }
     if(!mvpExternal) addPeopleLineSmart(left,'MVP',mvp,true,'',contextRows);
     else addExternalAwardPill(left,'MVP');
