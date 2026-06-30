@@ -758,8 +758,10 @@ function fixItalianAccents(s){
   replaceWord('qualita','qualità');
   replaceWord('quantita','quantità');
   replaceWord('citta','città');
-  replaceWord('autogoal','autogol');
-  out=out.replace(/\bgoal\b/gi,m=>m===m.toUpperCase()?'GOL':(m[0]===m[0].toUpperCase()?'Gol':'gol'));
+  replaceWord('autogol','autogoal');
+  replaceWord('autogoal','autogoal');
+  out=out.replace(/\bgol\b/gi,m=>m===m.toUpperCase()?'GOAL':(m[0]===m[0].toUpperCase()?'Goal':'goal'));
+  out=out.replace(/\bgoal\b/gi,m=>m===m.toUpperCase()?'GOAL':(m[0]===m[0].toUpperCase()?'Goal':'goal'));
   out=out.replace(/(^|\s)e'(?=\s|$)/gi,(m,p)=>p+(m.trim()[0]==='E'?'È':'è'));
   out=out.replace(/n'e/gi, m=>m[0]==='N'?"N'è":"n'è");
   return out;
@@ -784,28 +786,28 @@ function prettyColumnName(header){
     // Squadre / partite
     squadracasa:'Squadra casa', teamcasa:'Squadra casa', casa:'Casa', home:'Casa', squadra1:'Squadra 1',
     squadratrasferta:'Squadra trasferta', squadraospite:'Squadra ospite', trasferta:'Trasferta', ospite:'Ospite', away:'Trasferta', squadra2:'Squadra 2',
-    golcasa:'Gol casa', reticasa:'Gol casa', goalcasa:'Gol casa', gc:'GC', golsquadracasa:'Gol casa',
-    goltrasferta:'Gol trasferta', retiTrasferta:'Gol trasferta', goaltrasferta:'Gol trasferta', gt:'GT', golsquadratrasferta:'Gol trasferta',
+    golcasa:'Goal casa', reticasa:'Goal casa', goalcasa:'Goal casa', gc:'GC', golsquadracasa:'Goal casa',
+    goltrasferta:'Goal trasferta', retiTrasferta:'Goal trasferta', goaltrasferta:'Goal trasferta', gt:'GT', golsquadratrasferta:'Goal trasferta',
     risultato:'Risultato', score:'Risultato', esito:'Esito', vincitore:'Vincitore', giornata:'Giornata', turno:'Turno', data:'Data', giorno:'Giorno', note:'Note',
 
     // Classifiche squadre
     squadra:'Squadra', team:'Squadra', teamcode:'Squadra', teamname:'Squadra', partitegiocate:'PG', giocate:'PG', pg:'PG', vinte:'V', vittorie:'V', pareggiate:'N', pareggi:'N', perse:'P', sconfitte:'P',
-    golfatti:'GF', golsegnati:'GF', retifatte:'GF', golsquadra:'Gol squadra', golsubiti:'GS', retisubite:'GS', differenzareti:'DR', diffreti:'DR', dr:'DR',
+    golfatti:'GF', golsegnati:'GF', retifatte:'GF', golsquadra:'Goal squadra', golsubiti:'GS', retisubite:'GS', differenzareti:'DR', diffreti:'DR', dr:'DR',
     punti:'Punti', pts:'Punti', point:'Punti', points:'Punti', puntifinali:'Punti', puntitotali:'Punti totali', puntioriginali:'Punti originali', penalita:'Penalità', notapenalita:'Nota penalità', notepenalita:'Note penalità',
 
     // Portieri / bonus / penalità
     portiere:'Portiere', migliorportiere:'Miglior portiere', puntiportiere:'Punti PT', puntipt:'Punti PT', ptportiere:'Punti PT',
-    cleansheet:'Clean sheet', cleansheets:'Clean sheet', imbattuto:'Clean sheet', imbattibilita:'Imbattibilità', golsubitiportiere:'Gol subiti PT',
+    cleansheet:'Clean sheet', cleansheets:'Clean sheet', imbattuto:'Clean sheet', imbattibilita:'Imbattibilità', golsubitiportiere:'Goal subiti PT',
 
     // Giocatori
     giocatore:'Giocatore', calciatore:'Giocatore', player:'Giocatore', playername:'Giocatore', playernome:'Giocatore', nomeplayer:'Giocatore', nomegiocatore:'Giocatore', nomecompleto:'Nome completo', cognomeenome:'Cognome e nome',
     nome:'Nome', cognome:'Cognome', ruolo:'Ruolo', posizione:'Pos.', numero:'Numero', maglia:'Maglia',
-    gol:'Gol', goal:'Gol', reti:'Gol', golgiornata:'Gol giornata', retigiornata:'Gol giornata', goalgiornata:'Gol giornata',
-    assist:'Assist', autogol:'Autogol', autogoal:'Autogol', autoreti:'Autogol', mvp:'MVP', puntimvp:'Punti MVP',
-    presenze:'Presenze', partite:'Partite', mediagol:'Media gol', mediagolpartita:'Media gol/partita',
+    gol:'Goal', goal:'Goal', reti:'Goal', golgiornata:'Goal giornata', retigiornata:'Goal giornata', goalgiornata:'Goal giornata',
+    assist:'Assist', autogol:'Autogoal', autogoal:'Autogoal', autoreti:'Autogoal', mvp:'MVP', puntimvp:'Punti MVP',
+    presenze:'Presenze', partite:'Partite', mediagol:'Media goal', mediagolpartita:'Media goal/partita',
 
     // Riepiloghi
-    sezione:'Sezione', statistica:'Statistica', valore:'Valore', totale:'Totale', categoria:'Categoria', descrizione:'Descrizione',
+    sezione:'Sezione', statistica:'Statistica', valore:'Valore', quantita:'Quantità', qta:'Quantità', quantity:'Quantità', totale:'Totale', categoria:'Categoria', descrizione:'Descrizione',
     marcatoricasa:'Marcatori casa', marcatoritrasferta:'Marcatori trasferta', marcatore:'Marcatore', marcatori:'Marcatori',
     totalemarcatoregiornata:'Totale marcatore giornata', voce:'Voce', voci:'Voci', dato:'Dato', etichetta:'Etichetta'
   };
@@ -813,7 +815,7 @@ function prettyColumnName(header){
 
   // Split controllato per intestazioni tutte attaccate ma non presenti nella mappa.
   // Lavora sui termini più comuni dei CSV del torneo senza rovinare sigle tipo MVP o PG.
-  const tokens=['player','team','code','squadra','trasferta','ospite','giornata','originali','penalita','penalità','finali','totali','punti','portiere','giocatore','marcatori','marcatore','miglior','differenza','partite','partita','presenze','statistica','valore','cognome','numero','subiti','fatti','clean','sheet','assist','autogol','ruolo','media','goal','casa','note','nota','nome','reti','gol','mvp','pg','gf','gs','dr','pt','v','n','p'];
+  const tokens=['player','team','code','squadra','trasferta','ospite','giornata','originali','penalita','penalità','finali','totali','punti','portiere','giocatore','marcatori','marcatore','miglior','differenza','partite','partita','presenze','statistica','valore','quantita','qta','quantity','cognome','numero','subiti','fatti','clean','sheet','assist','autogoal','autogol','ruolo','media','goal','casa','note','nota','nome','reti','gol','mvp','pg','gf','gs','dr','pt','v','n','p'];
   let compact=n;
   const parts=[];
   while(compact){
@@ -1627,7 +1629,7 @@ function tableColumnRole(header,index,imgType,nameColIdx){
   if(['giornata','turno','round'].includes(n)) return 'round';
   if(['data','giorno','date'].includes(n)) return 'date';
   if(['partita','match','gara','incontro'].includes(n)) return 'match';
-  if(n.includes('punti') || n.includes('gol') || n.includes('goal') || n.includes('reti') || ['pts','pg','gf','gs','dr','pt','mvp'].includes(n)) return 'metric';
+  if(n.includes('punti') || n.includes('gol') || n.includes('goal') || n.includes('reti') || n.includes('quantita') || ['pts','pg','gf','gs','dr','pt','mvp','qta','qty'].includes(n)) return 'metric';
   if(n.includes('note') || n.includes('descrizione') || n.includes('commento')) return 'note';
   return 'text';
 }
@@ -1690,8 +1692,55 @@ function removeColumnsByNorm(tableRows, blockedNames){
   if(keep.length===headers.length) return tableRows;
   return tableRows.map(row=>keep.map(i=>row[i]??''));
 }
+
+function duplicateDisplayColumnKey(header){
+  const raw=String(header||'').trim();
+  const n=norm(raw);
+  if(!n) return '';
+  // Le vecchie intestazioni CSV e le nuove etichette UI possono convivere
+  // nella stessa tabella (es. Gol + Goal): in UI devono diventare una sola colonna.
+  if(['gol','goal','reti','g'].includes(n)) return 'goal';
+  if(['quantita','qta','quantity'].includes(n)) return 'quantita';
+  if(['autogol','autogoal','autoreti'].includes(n)) return 'autogoal';
+  return norm(prettyColumnName(raw));
+}
+function mergeDuplicateDisplayColumns(rows){
+  if(!rows || !rows.length) return rows;
+  const headers=rows[0]||[];
+  const groups=[];
+  const seen=new Map();
+  headers.forEach((h,i)=>{
+    const key=duplicateDisplayColumnKey(h) || ('__col_'+i);
+    if(seen.has(key)) groups[seen.get(key)].idxs.push(i);
+    else{
+      seen.set(key,groups.length);
+      groups.push({key,header:h,idxs:[i]});
+    }
+  });
+  if(!groups.some(g=>g.idxs.length>1)) return rows;
+  return rows.map((row,rowIndex)=>{
+    const merged=groups.map(g=>{
+      if(rowIndex===0){
+        if(g.key==='goal') return 'Goal';
+        if(g.key==='quantita') return 'Quantità';
+        if(g.key==='autogoal') return 'Autogoal';
+        return g.header;
+      }
+      const values=[];
+      g.idxs.forEach(i=>{
+        const v=row[i];
+        if(String(v??'').trim()==='') return;
+        if(!values.some(existing=>norm(existing)===norm(v))) values.push(v);
+      });
+      return values.join(' / ');
+    });
+    if(row && row._noLink) merged._noLink=true;
+    return merged;
+  });
+}
 function buildTable(rows, tableId, imgType, priorityNames, highlightName){
   if(!rows||!rows.length) return buildEl('div','empty','Nessun dato disponibile.');
+  rows=mergeDuplicateDisplayColumns(rows);
   let headers=rows[0];
   let body=rows.slice(1);
   const hasSearch=!!norm(state.search);
@@ -1818,7 +1867,7 @@ function renderChartMarcatori(){
   if(!data.length) return;
   const labels=data.map(r=>col(r,['giocatore','nome','calciatore','player'])||Object.values(r)[0]||'');
   const values=data.map(r=>num(col(r,['gol','reti','goal','g'])));
-  drawBarChart('chartMarcatori',labels,values,'Gol','player','');
+  drawBarChart('chartMarcatori',labels,values,'Goal','player','');
 }
 function renderChartPunti(){
   const f=sectionFiles('classifica_squadre')[0]; if(!f) return;
@@ -2796,13 +2845,13 @@ function renderStatistiche(){
   const card=document.createElement('div'); card.className='card';
   const h=document.createElement('h2'); h.textContent='Statistiche giocatori'; card.appendChild(h);
   if(!rows.length){
-    card.appendChild(buildEl('div','empty','Per calcolare la media gol servono classifica_marcatori.csv e risultati_partite.csv, oppure una colonna Partite nel CSV marcatori.'));
+    card.appendChild(buildEl('div','empty','Per calcolare la media goal servono classifica_marcatori.csv e risultati_partite.csv, oppure una colonna Partite nel CSV marcatori.'));
   } else {
-    const hint=document.createElement('p'); hint.className='hint'; hint.textContent='Media gol per partita = gol del giocatore / partite disputate.';
+    const hint=document.createElement('p'); hint.className='hint'; hint.textContent='Media goal per partita = goal del giocatore / partite disputate.';
     card.appendChild(hint);
-    const headers=['Giocatore','Media gol/partita','Squadra','Gol','Partite'];
+    const headers=['Giocatore','Media goal/partita','Squadra','Goal','Partite'];
     const body=rows.map(x=>[x.giocatore,x.media.toFixed(2).replace('.',','),x.squadra,x.gol,x.partite]);
-    card.appendChild(buildTable([headers,...body],'stats_giocatori',null,null,'media gol/partita'));
+    card.appendChild(buildTable([headers,...body],'stats_giocatori',null,null,'media goal/partita'));
   }
   el.appendChild(card);
 }
@@ -3239,7 +3288,7 @@ function wrappedChampionTeam(){
   };
 }
 function wrappedCraziestMatch(){
-  // Partita con più gol complessivi fra tutte quelle giocate, leggendo dai
+  // Partita con più goal complessivi fra tutte quelle giocate, leggendo dai
   // CSV risultati con la stessa logica già usata per mostrare i risultati
   // (resultText/goalsFromResult), così il dato è sempre coerente con il tab Risultati.
   let best=null;
@@ -3315,15 +3364,15 @@ function buildWrappedSlideEl(slide){
       <div class="ws-name">${esc(d.name)}</div>
       <div class="ws-sub">${esc(d.team)}</div>
       <div class="ws-big">${esc(d.goals)}</div>
-      <div class="ws-detail">gol segnati nel torneo</div>`);
+      <div class="ws-detail">goal segnati nel torneo</div>`);
   } else if(slide.type==='average'){
     el.appendChild(imgOrInitialEl('player',[d.name],'ws-photo'));
     el.insertAdjacentHTML('beforeend', `
-      <div class="ws-eyebrow">📈 Miglior media gol</div>
+      <div class="ws-eyebrow">📈 Miglior media goal</div>
       <div class="ws-name">${esc(d.name)}</div>
       <div class="ws-sub">${esc(d.team)}</div>
       <div class="ws-big">${esc(d.media.toFixed(2).replace('.',','))}</div>
-      <div class="ws-detail">gol a partita (${esc(d.gol)} gol in ${esc(d.partite)} partite)</div>`);
+      <div class="ws-detail">goal a partita (${esc(d.gol)} goal in ${esc(d.partite)} partite)</div>`);
   } else if(slide.type==='mvp'){
     el.appendChild(imgOrInitialEl('player',d.imageNames||[d.name],'ws-photo'));
     el.insertAdjacentHTML('beforeend', `
@@ -3357,14 +3406,14 @@ function buildWrappedSlideEl(slide){
       <div class="ws-eyebrow">🔥 Partita più pazza</div>
       <div class="ws-name">${esc(d.home)} ${esc(d.result)} ${esc(d.away)}</div>
       <div class="ws-big">${esc(d.totalGoals)}</div>
-      <div class="ws-detail">gol totali in una sola partita</div>`;
+      <div class="ws-detail">goal totali in una sola partita</div>`;
   } else if(slide.type==='totals'){
     el.innerHTML=`
       <div class="ws-eyebrow">📊 Numeri del torneo</div>
       <div class="ws-big">${esc(d.totalGoals)}</div>
-      <div class="ws-detail">gol segnati in ${esc(d.played)} partite</div>
+      <div class="ws-detail">goal segnati in ${esc(d.played)} partite</div>
       <div class="ws-stats-row">
-        <div class="ws-stat"><div class="n">${esc(d.avgPerMatch.toFixed(2).replace('.',','))}</div><div class="l">Gol a partita</div></div>
+        <div class="ws-stat"><div class="n">${esc(d.avgPerMatch.toFixed(2).replace('.',','))}</div><div class="l">Goal a partita</div></div>
       </div>`;
   } else if(slide.type==='closing'){
     el.innerHTML=`
@@ -3493,13 +3542,13 @@ async function wrappedDrawSlideOnCanvas(ctx,slide,w,h){
   ctx.font='500 30px Arial, sans-serif';
   let detail='';
   if(slide.type==='cover') detail='Ecco i numeri di questa edizione!';
-  else if(slide.type==='scorer') detail='gol segnati nel torneo';
-  else if(slide.type==='average') detail=`gol a partita (${d.gol} gol in ${d.partite} partite)`;
+  else if(slide.type==='scorer') detail='goal segnati nel torneo';
+  else if(slide.type==='average') detail=`goal a partita (${d.gol} goal in ${d.partite} partite)`;
   else if(slide.type==='mvp') detail='punti MVP totalizzati';
   else if(slide.type==='keeper') detail='punti come miglior portiere';
   else if(slide.type==='champion') detail=`punti  ·  ${d.v}V ${d.n}N ${d.p}P`;
-  else if(slide.type==='crazy') detail='gol totali in una sola partita';
-  else if(slide.type==='totals') detail=`gol in ${d.played} partite — media ${d.avgPerMatch.toFixed(2).replace('.',',')} a partita`;
+  else if(slide.type==='crazy') detail='goal totali in una sola partita';
+  else if(slide.type==='totals') detail=`goal in ${d.played} partite — media ${d.avgPerMatch.toFixed(2).replace('.',',')} a partita`;
   else if(slide.type==='closing') detail='Alla prossima edizione!';
   if(detail) wrappedWrapText(ctx,detail,cx,y,w-200,40);
 }
@@ -4011,9 +4060,9 @@ function formatProfileNumber(value){
 function profileStatTile(label,value,sub,isGold){
   const box=document.createElement('div'); box.className='player-profile-stat'+(isGold?' is-gold':'');
   const n=document.createElement('div'); n.className='n'; n.textContent=String(value);
-  const l=document.createElement('div'); l.className='l'; l.textContent=label;
+  const l=document.createElement('div'); l.className='l'; l.textContent=fixItalianAccents(label);
   box.appendChild(n); box.appendChild(l);
-  if(sub){ const s=document.createElement('div'); s.className='s'; s.textContent=sub; box.appendChild(s); }
+  if(sub){ const s=document.createElement('div'); s.className='s'; s.textContent=fixItalianAccents(sub); box.appendChild(s); }
   return box;
 }
 function profileShortGiornataLabel(value){
@@ -4098,18 +4147,18 @@ function openPlayerProfile(name,contextRow){
 
   const body=document.createElement('div'); body.className='player-profile-body';
   const stats=document.createElement('div'); stats.className='player-profile-stats';
-  if(!data.isKeeper || data.goals.total>0) stats.appendChild(profileStatTile('Gol segnati',formatProfileNumber(data.goals.total),data.goals.entries.length ? data.goals.entries.length+' giornate registrate' : 'Totale classifica',true));
-  if(data.mediaGol) stats.appendChild(profileStatTile('Media gol/partita',data.mediaGol.media.toFixed(2).replace('.',','),data.mediaGol.partite+' partite',false));
+  if(!data.isKeeper || data.goals.total>0) stats.appendChild(profileStatTile('Goal segnati',formatProfileNumber(data.goals.total),data.goals.entries.length ? data.goals.entries.length+' giornate registrate' : 'Totale classifica',true));
+  if(data.mediaGol) stats.appendChild(profileStatTile('Media goal/partita',data.mediaGol.media.toFixed(2).replace('.',','),data.mediaGol.partite+' partite',false));
   if(data.isKeeper){
     stats.appendChild(profileStatTile('Punti Miglior portiere',formatProfileNumber(data.keeper.total),'',true));
-    stats.appendChild(profileStatTile('Gol subiti squadra',data.conceded===null?'—':formatProfileNumber(data.conceded),data.team||'Squadra non indicata',false));
+    stats.appendChild(profileStatTile('Goal subiti squadra',data.conceded===null?'—':formatProfileNumber(data.conceded),data.team||'Squadra non indicata',false));
   } else {
     stats.appendChild(profileStatTile('Punti MVP',formatProfileNumber(data.mvp.total),data.mvp.entries.length ? data.mvp.entries.length+' giornate MVP' : 'Totale classifica',false));
   }
   body.appendChild(stats);
 
   const panels=document.createElement('div'); panels.className='player-profile-panels';
-  if(!data.isKeeper || data.goals.total>0) panels.appendChild(profileTimelineSection('Gol per giornata','⚽',data.goals.entries,{detail:'',valueSuffix:''},'Nessun dettaglio giornata disponibile per i gol.'));
+  if(!data.isKeeper || data.goals.total>0) panels.appendChild(profileTimelineSection('Goal per giornata','⚽',data.goals.entries,{detail:'',valueSuffix:''},'Nessun dettaglio giornata disponibile per i goal.'));
   if(!data.isKeeper){
     panels.appendChild(profileTimelineSection('MVP DELLA GIORNATA','⭐',data.mvp.entries,{detail:'',valueSuffix:'pt'},'Nessun MVP registrato nelle giornate.'));
   }
@@ -4178,7 +4227,7 @@ function comparablePlayersForRole(isKeeper,excludeName){
 function compareRadarDataset(data){
   if(data.isKeeper){
     return {
-      labels:['Gol subiti squadra','Punti Miglior Portiere'],
+      labels:['Goal subiti squadra','Punti Miglior Portiere'],
       values:[
         data.conceded===null?0:num(data.conceded),
         num(data.keeper.total)
@@ -4189,7 +4238,7 @@ function compareRadarDataset(data){
     };
   }
   return {
-    labels:['Gol','Media gol/partita','Punti MVP'],
+    labels:['Goal','Media goal/partita','Punti MVP'],
     values:[num(data.goals.total), data.mediaGol?Number(data.mediaGol.media.toFixed(2)):0, num(data.mvp.total)],
     invertHints:[false,false,false]
   };
@@ -4209,7 +4258,7 @@ function openCompareModal(playerAData){
   const title=document.createElement('h3'); title.className='compare-title'; title.textContent='Confronta giocatori';
   card.appendChild(title);
   const sub=document.createElement('p'); sub.className='compare-sub';
-  sub.textContent=isKeeper ? 'Confronto tra portieri: gol subiti e punti miglior portiere.' : 'Confronto tra giocatori di movimento: gol, media gol/partita, punti MVP.';
+  sub.textContent=isKeeper ? 'Confronto tra portieri: goal subiti e punti miglior portiere.' : 'Confronto tra giocatori di movimento: goal, media goal/partita, punti MVP.';
   card.appendChild(sub);
 
   if(!roster.length){
@@ -4855,7 +4904,7 @@ function parseRiepilogoFile(file){
   // Caso 1: CSV piatto reale generato dai tuoi file riepilogo_giornataN.csv.
   // La prima riga contiene la colonna "Sezione" e ogni riga è già classificata
   // come Partita, Marcatore, Totale marcatore giornata, MVP, Miglior portiere,
-  // Autogol o Statistica. Questo controllo va fatto PRIMA del parser a blocchi:
+  // Autogoal o Statistica. Questo controllo va fatto PRIMA del parser a blocchi:
   // altrimenti una riga che inizia con "Partita" viene scambiata per titolo di blocco.
   const flat=rowsToObjects(state.rows[file]||[]);
   if(flat.length && Object.keys(flat[0]||{}).some(k=>norm(k)==='sezione')){
@@ -5610,10 +5659,10 @@ function deriveStats(partite, marcatori, stats, totaliMarcatori){
   let migliorMarcatore=riepilogoTopScorerLabel(partite,marcatori,totaliMarcatori) || statValue(stats,['miglior marcatore','top scorer']);
   return [
     ['Partite giocate',partiteGiocate],
-    ['Gol totali',golTotali],
-    ['Media gol',media],
+    ['Goal totali',golTotali],
+    ['Media goal',media],
     ['Clean sheet',clean],
-    ['Partita con più gol',maxMatch],
+    ['Partita con più goal',maxMatch],
     ['Miglior marcatore',migliorMarcatore]
   ].filter(x=>String(x[1]||'').trim()!=='' && x[1]!==0);
 }
@@ -5718,7 +5767,7 @@ function opponentForFavoredTeam(favoredTeam, autogoalRow, partite){
     if(norm(b)===favoredKey) return a;
   }
 
-  // Poi prova dalle partite della stessa giornata: nel CSV la squadra in Autogol
+  // Poi prova dalle partite della stessa giornata: nel CSV la squadra in Autogoal
   // indica chi ha beneficiato dell'autorete; per mostrare chi l'ha fatta serve l'avversaria.
   const day=String(firstPresent(autogoalRow,[['giornata','turno','round']])||'').trim();
   const candidates=partite.filter(p=>{
@@ -5737,8 +5786,59 @@ function opponentForFavoredTeam(favoredTeam, autogoalRow, partite){
   }
   return '';
 }
-function autogoalRowsForDisplay(rows, partite){
+function autogoalTableColumnKey(row, candidates){
+  const keys=Object.keys(row||{});
+  const normCandidates=(candidates||[]).map(norm);
+  return keys.find(k=>normCandidates.includes(norm(k))) || '';
+}
+function autogoalTableValuesSame(goalValue, valueValue){
+  const a=String(goalValue??'').trim(), b=String(valueValue??'').trim();
+  if(!a && !b) return true;
+  if(!a || !b) return false;
+  const an=num(a), bn=num(b);
+  if((an!==0 || bn!==0) && an===bn) return true;
+  return norm(a)===norm(b);
+}
+function normalizeAutogoalTableRows(rows){
+  if(!rows || !rows.length) return rows;
+  const goalCandidates=['goal','gol','reti','g'];
+  const valueCandidates=['valore','value','totale','numero','quantita','quantità','qta','quantity'];
+  const normalizedValueCandidates=valueCandidates.map(norm);
+  const hasGoal=rows.some(r=>!!autogoalTableColumnKey(r,goalCandidates));
+  const hasValue=rows.some(r=>!!autogoalTableColumnKey(r,valueCandidates));
+  const goalAndValueSame=hasGoal && hasValue && rows.every(r=>{
+    const goalKey=autogoalTableColumnKey(r,goalCandidates);
+    const valueKey=autogoalTableColumnKey(r,valueCandidates);
+    if(!goalKey && !valueKey) return true;
+    return autogoalTableValuesSame(goalKey?r[goalKey]:'', valueKey?r[valueKey]:'');
+  });
   return rows.map(r=>{
+    const valueKey=autogoalTableColumnKey(r,valueCandidates);
+    const goalKey=autogoalTableColumnKey(r,goalCandidates);
+    const quantityValue=valueKey ? r[valueKey] : (goalKey ? r[goalKey] : '');
+    let quantityWritten=false;
+    const out={};
+    Object.entries(r).forEach(([k,v])=>{
+      const nk=norm(k);
+      if(nk==='voce'||nk==='voci') return;
+      if(goalAndValueSame && (nk==='goal'||nk==='gol'||nk==='reti'||nk==='g')) return;
+      if(goalAndValueSame && normalizedValueCandidates.includes(nk)){
+        if(!quantityWritten){ out['Quantità']=quantityValue; quantityWritten=true; }
+        return;
+      }
+      out[k]=v;
+    });
+    if(goalAndValueSame && !quantityWritten && String(quantityValue??'').trim()) out['Quantità']=quantityValue;
+    return out;
+  });
+}
+function rowsHavePlayerColumn(rows){
+  const candidates=NAME_COL_CANDIDATES_PLAYER.map(norm);
+  return (rows||[]).some(r=>Object.keys(r||{}).some(k=>candidates.some(c=>norm(k)===c||norm(k).includes(c))));
+}
+
+function autogoalRowsForDisplay(rows, partite){
+  const displayRows=rows.map(r=>{
     const out={...r};
     const favored=firstPresent(r,[['squadra','team','squadra beneficiaria','a favore di']]);
     const ownTeam=opponentForFavoredTeam(favored,r,partite);
@@ -5750,6 +5850,7 @@ function autogoalRowsForDisplay(rows, partite){
     }
     return out;
   });
+  return normalizeAutogoalTableRows(displayRows);
 }
 
 function renderMiniSection(parent,title,rows,imgType,emptyText,tableId,priorityNames,highlightName){
@@ -5902,11 +6003,11 @@ function renderPartiteRiepilogo(parent,rows,file,contextRows){
       agRow.style.cssText='display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap';
       const agIcon=document.createElement('b');
       agIcon.className='small'; agIcon.style.minWidth='28px'; agIcon.style.fontSize='16px';
-      agIcon.textContent='AG'; agIcon.title='Autogol';
+      agIcon.textContent='AG'; agIcon.title='Autogoal';
       agRow.appendChild(agIcon);
       const agPill=document.createElement('span');
       agPill.style.cssText='display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--soft);border-radius:999px;padding:4px 8px;font-size:12px;font-weight:700';
-      agPill.textContent='Autogol'+(autogoalCount>1?' ×'+String(autogoalCount):'');
+      agPill.textContent='Autogoal'+(autogoalCount>1?' ×'+String(autogoalCount):'');
       agRow.appendChild(agPill);
       left.appendChild(agRow);
     }
@@ -6124,7 +6225,7 @@ function renderRiepilogoGiornate(){
       'Giornata': rowGiornataKey(allRows[0]||{},f)||'',
       'Squadra': '-',
       'Giocatore': 'Esterno',
-      'Gol': count,
+      'Goal': count,
       _noLink: true
     }));
     // ── Render sezioni ────────────────────────────────────────────────────────
@@ -6157,7 +6258,7 @@ function renderRiepilogoGiornate(){
     const portiereRows=[...portiere,...portiereExternalRows];
     const portiereNoInternalText=(!playerSearch&&!norm(state.search)&&!portiereRows.length)?'Nessun miglior portiere indicato.':'';
     renderMiniSection(content,'Miglior portiere',portiereRows,'player',portiereNoInternalText,tablePrefix+'_portiere',['sezione','giocatore','portiere','puntiportiere','punti pt','giornata','squadra','partita'],['puntiportiere','punti pt','punti']);
-    renderMiniSection(content,'Autogol',autogoal,'player','',tablePrefix+'_autogol',['giocatore']);
+    renderMiniSection(content,'Autogoal',autogoal,rowsHavePlayerColumn(autogoal)?'player':null,'',tablePrefix+'_autogoal',['sezione','giocatore','marcatore','quantita','goal','valore'],['quantita','goal','valore']);
     rendered++;
   }
 
@@ -6312,11 +6413,11 @@ function renderMatchSection(sectionId, kind){
             agRow.style.cssText='display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap';
             const agIcon=document.createElement('b');
             agIcon.className='small'; agIcon.style.minWidth='28px'; agIcon.style.fontSize='16px';
-            agIcon.textContent='AG'; agIcon.title='Autogol';
+            agIcon.textContent='AG'; agIcon.title='Autogoal';
             agRow.appendChild(agIcon);
             const agPill=document.createElement('span');
             agPill.style.cssText='display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--soft);border-radius:999px;padding:4px 8px;font-size:12px;font-weight:700';
-            agPill.textContent='Autogol'+(autogoalCount>1?' ×'+String(autogoalCount):'');
+            agPill.textContent='Autogoal'+(autogoalCount>1?' ×'+String(autogoalCount):'');
             agRow.appendChild(agPill);
             left.appendChild(agRow);
           }
@@ -6425,11 +6526,11 @@ function renderMatchSection(sectionId, kind){
         agRow.style.cssText='display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap';
         const agIcon=document.createElement('b');
         agIcon.className='small'; agIcon.style.minWidth='28px'; agIcon.style.fontSize='16px';
-        agIcon.textContent='AG'; agIcon.title='Autogol';
+        agIcon.textContent='AG'; agIcon.title='Autogoal';
         agRow.appendChild(agIcon);
         const agPill=document.createElement('span');
         agPill.style.cssText='display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--soft);border-radius:999px;padding:4px 8px;font-size:12px;font-weight:700';
-        agPill.textContent='Autogol'+(autogoalCount>1?' ×'+String(autogoalCount):'');
+        agPill.textContent='Autogoal'+(autogoalCount>1?' ×'+String(autogoalCount):'');
         agRow.appendChild(agPill);
         left.appendChild(agRow);
       }
